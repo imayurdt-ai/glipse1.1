@@ -3,9 +3,8 @@
  * Phase A — crosshair region selection (region mode only).
  * Phase B — Konva annotation canvas + FloatingActionBar.
  *
- * Fullscreen mode skips Phase A entirely:
- *   main sends 'fullscreen-mode' with {width,height} → rect set immediately →
- *   then 'send-capture-image' → Phase B opens straight away.
+ * Text tool: a native <input> floats over the Konva stage at the click
+ * position, lets the user type, then commits on Enter or blur.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';
@@ -19,6 +18,8 @@ import FloatingActionBar from '../../components/FloatingActionBar';
 import { useAnnotation } from '../../hooks/useAnnotation';
 import { useAppStore, type Annotation } from '../../store/useAppStore';
 
+// ─ Shape ─────────────────────────────────────────────────────────────────────────
+
 function Shape({ a }: { a: Annotation }) {
   const common = { stroke: a.color, strokeWidth: a.weight, listening: false };
   if (a.tool === 'pen')    return <Line points={a.points ?? []} {...common} lineCap="round" lineJoin="round" />;
@@ -27,6 +28,8 @@ function Shape({ a }: { a: Annotation }) {
   if (a.tool === 'circle') return <Circle x={a.x} y={a.y} radius={a.radius} {...common} />;
   return <Text x={a.x} y={a.y} text={a.text ?? ''} fill={a.color} fontSize={18} fontStyle="bold" listening={false} />;
 }
+
+// ─ Crop ──────────────────────────────────────────────────────────────────────────
 
 function cropImage(src: string, rect: { x: number; y: number; w: number; h: number }): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -44,11 +47,11 @@ function cropImage(src: string, rect: { x: number; y: number; w: number; h: numb
   });
 }
 
-// ─ Phase A ──────────────────────────────────────────────────────────────────────
+// ─ Phase A: Selection ───────────────────────────────────────────────────────────
 
 function SelectionPhase({ sourceImage }: { sourceImage: string }) {
   const setCapturedImage = useAppStore((s) => s.setCapturedImage);
-  const setSelectionRect  = useAppStore((s) => s.setSelectionRect);
+  const setSelectionRect = useAppStore((s) => s.setSelectionRect);
   const startRef   = useRef<{ x: number; y: number } | null>(null);
   const isDragging = useRef(false);
   const [liveRect, setLiveRect] = React.useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -111,7 +114,7 @@ function SelectionPhase({ sourceImage }: { sourceImage: string }) {
   );
 }
 
-// ─ Phase B ──────────────────────────────────────────────────────────────────────
+// ─ Phase B: Annotation ──────────────────────────────────────────────────────────
 
 function AnnotationPhase({
   croppedImage, rect,
@@ -121,7 +124,14 @@ function AnnotationPhase({
 }) {
   const annotations = useAppStore((s) => s.annotations);
   const setTool     = useAppStore((s) => s.setTool);
-  const { currentAnnotation, handleStageMouseDown, handleStageMouseMove, handleStageMouseUp } = useAnnotation();
+  const {
+    currentAnnotation,
+    textEditor,
+    commitText,
+    handleStageMouseDown,
+    handleStageMouseMove,
+    handleStageMouseUp,
+  } = useAnnotation();
   const [bgImage] = useImage(croppedImage);
   const stageRef  = useRef<Konva.Stage>(null);
 
@@ -133,6 +143,7 @@ function AnnotationPhase({
 
   return (
     <div className="fixed inset-0" style={{ background: 'rgba(0,0,0,0.45)' }}>
+      {/* Konva canvas */}
       <div className="absolute" style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}>
         <Stage ref={stageRef} width={rect.w} height={rect.h}
           onMouseDown={handleStageMouseDown}
@@ -145,7 +156,53 @@ function AnnotationPhase({
             {currentAnnotation && <Shape a={currentAnnotation} />}
           </Layer>
         </Stage>
+
+        {/* Floating text input — appears at click position when text tool is active */}
+        {textEditor && (
+          <input
+            autoFocus
+            value={textEditor.value}
+            onChange={(e) => {
+              const val = e.target.value;
+              // Keep the editor open with updated value (no store write yet)
+              // We rely on commitText for final write
+              textEditor.value = val;
+              // Force re-render by spreading
+              // Since textEditor is state in useAnnotation, update via a local trick:
+              e.target.setAttribute('data-value', val);
+            }}
+            onInput={(e) => {
+              // Update the live value in textEditor ref
+              const val = (e.target as HTMLInputElement).value;
+              textEditor.value = val;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); commitText({ ...textEditor, value: (e.target as HTMLInputElement).value }); }
+              if (e.key === 'Escape') { commitText({ ...textEditor, value: '' }); }
+            }}
+            onBlur={(e) => commitText({ ...textEditor, value: e.target.value })}
+            style={{
+              position: 'absolute',
+              left: textEditor.x,
+              top: textEditor.y - 2,
+              minWidth: 120,
+              background: 'transparent',
+              border: 'none',
+              borderBottom: `2px solid ${textEditor.color}`,
+              color: textEditor.color,
+              fontSize: 18,
+              fontWeight: 'bold',
+              fontFamily: 'inherit',
+              outline: 'none',
+              caretColor: textEditor.color,
+              zIndex: 10,
+              padding: '0 2px',
+            }}
+          />
+        )}
       </div>
+
+      {/* FAB */}
       <div className="absolute" style={{
         left: rect.x + rect.w / 2,
         top: Math.min(rect.y + rect.h + 20, window.innerHeight - 72),
@@ -160,35 +217,26 @@ function AnnotationPhase({
 // ─ Root ─────────────────────────────────────────────────────────────────────────────
 
 export default function Overlay() {
-  const sourceImage    = useAppStore((s) => s.sourceImage);
-  const capturedImage  = useAppStore((s) => s.capturedImage);
-  const selectionRect  = useAppStore((s) => s.selectionRect);
-  const setSourceImage = useAppStore((s) => s.setSourceImage);
+  const sourceImage      = useAppStore((s) => s.sourceImage);
+  const capturedImage    = useAppStore((s) => s.capturedImage);
+  const selectionRect    = useAppStore((s) => s.selectionRect);
+  const setSourceImage   = useAppStore((s) => s.setSourceImage);
   const setCapturedImage = useAppStore((s) => s.setCapturedImage);
   const setSelectionRect = useAppStore((s) => s.setSelectionRect);
-  const reset          = useAppStore((s) => s.reset);
+  const reset            = useAppStore((s) => s.reset);
 
   useEffect(() => {
-    if (!window.electron) {
-      console.error('[Overlay] window.electron UNDEFINED');
-      return;
-    }
+    if (!window.electron) { console.error('[Overlay] window.electron UNDEFINED'); return; }
 
-    const offCapture = window.electron.onCaptureImage(async (img) => {
+    const offCapture = window.electron.onCaptureImage((img) => {
       console.log('[Overlay] onCaptureImage, length:', img.length);
       setSourceImage(img);
     });
-
     const offReset = window.electron.onResetOverlay(() => {
-      console.log('[Overlay] reset');
-      reset();
+      console.log('[Overlay] reset'); reset();
     });
-
-    // Fullscreen mode: set rect to full display size, then crop = full image
-    const offFullscreen = window.electron.onFullscreenMode(async ({ width, height }: { width: number; height: number }) => {
-      console.log('[Overlay] fullscreen-mode received, size:', width, 'x', height);
-      // selectionRect and capturedImage will be set once image arrives
-      // Store the intended full-screen rect now
+    const offFullscreen = window.electron.onFullscreenMode(({ width, height }) => {
+      console.log('[Overlay] fullscreen-mode, size:', width, 'x', height);
       setSelectionRect({ x: 0, y: 0, w: width, h: height });
     });
 
@@ -201,21 +249,14 @@ export default function Overlay() {
     return () => { offCapture(); offReset(); offFullscreen(); window.removeEventListener('keydown', onKey); };
   }, [reset, setSourceImage, setCapturedImage, setSelectionRect]);
 
-  // Fullscreen mode: when selectionRect is already set (full display) and sourceImage arrives,
-  // skip Phase A by setting capturedImage = sourceImage directly
+  // Fullscreen: selectionRect set + sourceImage arrived → skip Phase A
   useEffect(() => {
-    if (!sourceImage || capturedImage) return;
-    if (!selectionRect) return;
-    // If rect covers full screen (x=0, y=0), treat image as the cropped image directly
-    if (selectionRect.x === 0 && selectionRect.y === 0 &&
-        selectionRect.w > 0 && selectionRect.h > 0) {
-      // Check if this looks like a fullscreen rect (large dimensions)
-      const isFullscreen = selectionRect.w >= window.screen.width * 0.9;
-      if (isFullscreen) {
-        console.log('[Overlay] fullscreen mode — skipping Phase A, going straight to FAB');
-        setCapturedImage(sourceImage);
-        return;
-      }
+    if (!sourceImage || capturedImage || !selectionRect) return;
+    const isFullscreen = selectionRect.x === 0 && selectionRect.y === 0
+      && selectionRect.w >= window.screen.width * 0.9;
+    if (isFullscreen) {
+      console.log('[Overlay] fullscreen — skipping Phase A');
+      setCapturedImage(sourceImage);
     }
   }, [sourceImage, capturedImage, selectionRect, setCapturedImage]);
 
