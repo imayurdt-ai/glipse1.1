@@ -1,11 +1,5 @@
 /**
  * @file useAnnotation.ts
- * Konva drawing hook.
- *
- * Text tool flow:
- *   1. User clicks canvas  → a native <input> appears at that position
- *   2. User types text     → live preview updates
- *   3. Enter or click away → annotation committed to store
  */
 
 import { useState, useCallback } from 'react';
@@ -19,24 +13,24 @@ export interface TextEditor {
   x: number;
   y: number;
   color: string;
-  value: string;
 }
 
 export function useAnnotation() {
-  const activeTool   = useAppStore((s) => s.activeTool);
-  const activeColor  = useAppStore((s) => s.activeColor);
-  const activeWeight = useAppStore((s) => s.activeWeight);
+  const activeTool    = useAppStore((s) => s.activeTool);
+  const activeColor   = useAppStore((s) => s.activeColor);
+  const activeWeight  = useAppStore((s) => s.activeWeight);
   const addAnnotation = useAppStore((s) => s.addAnnotation);
 
   const [current,    setCurrent]    = useState<Annotation | null>(null);
   const [textEditor, setTextEditor] = useState<TextEditor | null>(null);
+  // Separate state for the live typed value so React re-renders on every keystroke
+  const [textValue,  setTextValue]  = useState<string>('');
 
   const pt = (e: KonvaEventObject<MouseEvent>) =>
     e.target.getStage()?.getPointerPosition() ?? { x: 0, y: 0 };
 
-  // Commit the open text editor to the store
-  const commitText = useCallback((editor: TextEditor) => {
-    if (editor.value.trim()) {
+  const commitText = useCallback((value: string, editor: TextEditor) => {
+    if (value.trim()) {
       addAnnotation({
         id: editor.id,
         tool: 'text',
@@ -44,22 +38,26 @@ export function useAnnotation() {
         weight: 2,
         x: editor.x,
         y: editor.y,
-        text: editor.value.trim(),
+        text: value.trim(),
       });
     }
     setTextEditor(null);
+    setTextValue('');
   }, [addAnnotation]);
 
   const handleStageMouseDown = (e: KonvaEventObject<MouseEvent>) => {
     const { x, y } = pt(e);
     const base = { id: uid(), tool: activeTool, color: activeColor, weight: activeWeight };
 
-    // Commit any open text editor before starting a new action
-    if (textEditor) { commitText(textEditor); return; }
+    // Clicking elsewhere while text editor is open commits it
+    if (textEditor) {
+      commitText(textValue, textEditor);
+      return;
+    }
 
     if (activeTool === 'text') {
-      // Open inline text editor at click position
-      setTextEditor({ id: uid(), x, y, color: activeColor, value: '' });
+      setTextEditor({ id: uid(), x, y, color: activeColor });
+      setTextValue('');
       return;
     }
     if (activeTool === 'pen' || activeTool === 'arrow') {
@@ -70,7 +68,6 @@ export function useAnnotation() {
       setCurrent({ ...base, x, y, width: 0, height: 0 });
       return;
     }
-    // circle
     setCurrent({ ...base, x, y, radius: 0 });
   };
 
@@ -100,6 +97,8 @@ export function useAnnotation() {
   return {
     currentAnnotation: current,
     textEditor,
+    textValue,
+    setTextValue,
     commitText,
     handleStageMouseDown,
     handleStageMouseMove,

@@ -1,10 +1,5 @@
 /**
  * @file Overlay.tsx
- * Phase A — crosshair region selection (region mode only).
- * Phase B — Konva annotation canvas + FloatingActionBar.
- *
- * Text tool: a native <input> floats over the Konva stage at the click
- * position, lets the user type, then commits on Enter or blur.
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';
@@ -18,8 +13,6 @@ import FloatingActionBar from '../../components/FloatingActionBar';
 import { useAnnotation } from '../../hooks/useAnnotation';
 import { useAppStore, type Annotation } from '../../store/useAppStore';
 
-// ─ Shape ─────────────────────────────────────────────────────────────────────────
-
 function Shape({ a }: { a: Annotation }) {
   const common = { stroke: a.color, strokeWidth: a.weight, listening: false };
   if (a.tool === 'pen')    return <Line points={a.points ?? []} {...common} lineCap="round" lineJoin="round" />;
@@ -28,8 +21,6 @@ function Shape({ a }: { a: Annotation }) {
   if (a.tool === 'circle') return <Circle x={a.x} y={a.y} radius={a.radius} {...common} />;
   return <Text x={a.x} y={a.y} text={a.text ?? ''} fill={a.color} fontSize={18} fontStyle="bold" listening={false} />;
 }
-
-// ─ Crop ──────────────────────────────────────────────────────────────────────────
 
 function cropImage(src: string, rect: { x: number; y: number; w: number; h: number }): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -47,7 +38,7 @@ function cropImage(src: string, rect: { x: number; y: number; w: number; h: numb
   });
 }
 
-// ─ Phase A: Selection ───────────────────────────────────────────────────────────
+// ─ Phase A ───────────────────────────────────────────────────────────────
 
 function SelectionPhase({ sourceImage }: { sourceImage: string }) {
   const setCapturedImage = useAppStore((s) => s.setCapturedImage);
@@ -114,7 +105,7 @@ function SelectionPhase({ sourceImage }: { sourceImage: string }) {
   );
 }
 
-// ─ Phase B: Annotation ──────────────────────────────────────────────────────────
+// ─ Phase B ───────────────────────────────────────────────────────────────
 
 function AnnotationPhase({
   croppedImage, rect,
@@ -127,11 +118,14 @@ function AnnotationPhase({
   const {
     currentAnnotation,
     textEditor,
+    textValue,
+    setTextValue,
     commitText,
     handleStageMouseDown,
     handleStageMouseMove,
     handleStageMouseUp,
   } = useAnnotation();
+
   const [bgImage] = useImage(croppedImage);
   const stageRef  = useRef<Konva.Stage>(null);
 
@@ -143,60 +137,63 @@ function AnnotationPhase({
 
   return (
     <div className="fixed inset-0" style={{ background: 'rgba(0,0,0,0.45)' }}>
-      {/* Konva canvas */}
-      <div className="absolute" style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}>
+      <div className="absolute" style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, position: 'absolute' }}>
+
+        {/* Konva stage */}
         <Stage ref={stageRef} width={rect.w} height={rect.h}
           onMouseDown={handleStageMouseDown}
           onMouseMove={handleStageMouseMove}
           onMouseUp={handleStageMouseUp}
-          style={{ cursor: 'crosshair', display: 'block' }}>
+          style={{ cursor: textEditor ? 'text' : 'crosshair', display: 'block' }}>
           <Layer>
             {bgImage && <KonvaImage image={bgImage} width={rect.w} height={rect.h} />}
             {annotations.map((a) => <Shape key={a.id} a={a} />)}
             {currentAnnotation && <Shape a={currentAnnotation} />}
+            {/* Live preview of text being typed */}
+            {textEditor && textValue && (
+              <Text
+                x={textEditor.x} y={textEditor.y}
+                text={textValue}
+                fill={textEditor.color}
+                fontSize={18} fontStyle="bold"
+                listening={false}
+              />
+            )}
           </Layer>
         </Stage>
 
-        {/* Floating text input — appears at click position when text tool is active */}
+        {/* Native HTML input — floats over stage at click position */}
         {textEditor && (
           <input
             autoFocus
-            value={textEditor.value}
-            onChange={(e) => {
-              const val = e.target.value;
-              // Keep the editor open with updated value (no store write yet)
-              // We rely on commitText for final write
-              textEditor.value = val;
-              // Force re-render by spreading
-              // Since textEditor is state in useAnnotation, update via a local trick:
-              e.target.setAttribute('data-value', val);
-            }}
-            onInput={(e) => {
-              // Update the live value in textEditor ref
-              const val = (e.target as HTMLInputElement).value;
-              textEditor.value = val;
-            }}
+            value={textValue}
+            onChange={(e) => setTextValue(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); commitText({ ...textEditor, value: (e.target as HTMLInputElement).value }); }
-              if (e.key === 'Escape') { commitText({ ...textEditor, value: '' }); }
+              e.stopPropagation(); // prevent Esc from closing overlay
+              if (e.key === 'Enter') { e.preventDefault(); commitText(textValue, textEditor); }
+              if (e.key === 'Escape') { commitText('', textEditor); } // cancel with empty = discard
             }}
-            onBlur={(e) => commitText({ ...textEditor, value: e.target.value })}
+            onBlur={() => commitText(textValue, textEditor)}
+            placeholder="Type here..."
             style={{
               position: 'absolute',
               left: textEditor.x,
-              top: textEditor.y - 2,
-              minWidth: 120,
-              background: 'transparent',
+              top: textEditor.y,
+              minWidth: 140,
+              maxWidth: rect.w - textEditor.x - 8,
+              background: 'rgba(0,0,0,0.55)',
               border: 'none',
               borderBottom: `2px solid ${textEditor.color}`,
+              borderRadius: '2px 2px 0 0',
               color: textEditor.color,
               fontSize: 18,
               fontWeight: 'bold',
               fontFamily: 'inherit',
               outline: 'none',
               caretColor: textEditor.color,
-              zIndex: 10,
-              padding: '0 2px',
+              zIndex: 20,
+              padding: '2px 6px',
+              letterSpacing: '0.01em',
             }}
           />
         )}
@@ -227,37 +224,23 @@ export default function Overlay() {
 
   useEffect(() => {
     if (!window.electron) { console.error('[Overlay] window.electron UNDEFINED'); return; }
-
-    const offCapture = window.electron.onCaptureImage((img) => {
-      console.log('[Overlay] onCaptureImage, length:', img.length);
-      setSourceImage(img);
-    });
-    const offReset = window.electron.onResetOverlay(() => {
-      console.log('[Overlay] reset'); reset();
-    });
+    const offCapture    = window.electron.onCaptureImage((img) => { console.log('[Overlay] image received'); setSourceImage(img); });
+    const offReset      = window.electron.onResetOverlay(() => { console.log('[Overlay] reset'); reset(); });
     const offFullscreen = window.electron.onFullscreenMode(({ width, height }) => {
-      console.log('[Overlay] fullscreen-mode, size:', width, 'x', height);
+      console.log('[Overlay] fullscreen', width, 'x', height);
       setSelectionRect({ x: 0, y: 0, w: width, h: height });
     });
-
     window.electron.rendererReady();
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') window.electron.closeOverlay();
-    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') window.electron.closeOverlay(); };
     window.addEventListener('keydown', onKey);
     return () => { offCapture(); offReset(); offFullscreen(); window.removeEventListener('keydown', onKey); };
   }, [reset, setSourceImage, setCapturedImage, setSelectionRect]);
 
-  // Fullscreen: selectionRect set + sourceImage arrived → skip Phase A
   useEffect(() => {
     if (!sourceImage || capturedImage || !selectionRect) return;
     const isFullscreen = selectionRect.x === 0 && selectionRect.y === 0
       && selectionRect.w >= window.screen.width * 0.9;
-    if (isFullscreen) {
-      console.log('[Overlay] fullscreen — skipping Phase A');
-      setCapturedImage(sourceImage);
-    }
+    if (isFullscreen) setCapturedImage(sourceImage);
   }, [sourceImage, capturedImage, selectionRect, setCapturedImage]);
 
   if (!sourceImage)                     return <div className="fixed inset-0" style={{ background: 'transparent' }} />;
