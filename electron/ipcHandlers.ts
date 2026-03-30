@@ -45,21 +45,43 @@ export function registerIpcHandlers(deps: Deps): void {
     deps.safeHideOverlay();
   });
 
+  // Save: temporarily lower overlay so native dialog appears on top
   ipcMain.handle('save-image', async (_e, dataUrl: string, filename: string) => {
+    const overlay = deps.getOverlayWindow();
+
+    // Step down overlay so the OS file dialog can appear above it
+    if (overlay && !overlay.isDestroyed()) {
+      overlay.setAlwaysOnTop(false);
+      overlay.setVisibleOnAllWorkspaces(false);
+    }
+
     const defaultPath = path.join(app.getPath('pictures'), filename);
-    const result = await dialog.showSaveDialog({
-      title: 'Save Screenshot',
-      defaultPath,
-      filters: [{ name: 'PNG Image', extensions: ['png'] }],
-    });
-    if (result.canceled || !result.filePath) return { canceled: true };
+    let result: Electron.SaveDialogReturnValue;
+    try {
+      result = await dialog.showSaveDialog({
+        title: 'Save Screenshot',
+        defaultPath,
+        filters: [{ name: 'PNG Image', extensions: ['png'] }],
+      });
+    } finally {
+      // Always restore overlay on top, even if dialog threw
+      if (overlay && !overlay.isDestroyed()) {
+        overlay.setAlwaysOnTop(true, 'screen-saver', 1);
+        overlay.focus();
+      }
+    }
+
+    if (result!.canceled || !result!.filePath) return { canceled: true };
+
     const b64 = dataUrl.replace(/^data:image\/png;base64,/, '');
-    await fs.writeFile(result.filePath, Buffer.from(b64, 'base64'));
-    return { canceled: false, filePath: result.filePath };
+    await fs.writeFile(result!.filePath, Buffer.from(b64, 'base64'));
+    console.log('[IPC] Image saved to:', result!.filePath);
+    return { canceled: false, filePath: result!.filePath };
   });
 
   ipcMain.handle('copy-to-clipboard', (_e, dataUrl: string) => {
     clipboard.writeImage(nativeImage.createFromDataURL(dataUrl));
+    console.log('[IPC] Image copied to clipboard');
   });
 
   ipcMain.handle('get-settings', () => ({
