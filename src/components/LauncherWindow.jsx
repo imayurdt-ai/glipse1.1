@@ -1,6 +1,6 @@
 /**
  * LauncherWindow.jsx
- * Main app window for Glimpse. Triggers screenshot capture via Electron IPC.
+ * Main 320x300 app window. No scroll wrapper — fills the Electron window exactly.
  */
 
 import React, { useState } from 'react';
@@ -11,19 +11,26 @@ export default function LauncherWindow() {
   const [captureType, setCaptureType] = useState('region');
 
   const handleCapture = () => {
-    // In Electron context, trigger via IPC. In browser preview, no-op.
     if (typeof window !== 'undefined' && window.electron) {
+      // Retake triggers the full capture pipeline from main process
       window.electron.retakeCapture();
     }
   };
 
+  const handleClose = () => {
+    if (typeof window !== 'undefined' && window.electron) {
+      window.electron.closeOverlay();
+    }
+  };
+
   return (
+    // Fills exactly the 320x300 Electron window — no margin, no scroll
     <div
-      className="w-[320px] bg-[#1C1C1E] rounded-xl border border-[#2A2A2D] flex flex-col overflow-hidden"
+      className="w-full h-full bg-[#1C1C1E] flex flex-col overflow-hidden"
       style={{ fontFamily: "'Inter', sans-serif" }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#2A2A2D]">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#2A2A2D] flex-shrink-0">
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-md bg-[#F9FAFB] flex items-center justify-center">
             <Camera size={13} className="text-[#111111]" />
@@ -35,17 +42,17 @@ export default function LauncherWindow() {
             <Settings size={15} />
           </button>
           <button
-            onClick={() => window.electron?.closeOverlay()}
+            onClick={handleClose}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-[#9CA3AF] hover:text-[#F9FAFB] hover:bg-[#2A2A2D] transition-colors">
             <X size={15} />
           </button>
         </div>
       </div>
 
-      {/* Body */}
-      <div className="flex flex-col gap-5 px-4 py-5">
+      {/* Body — flex-1 fills remaining height exactly */}
+      <div className="flex flex-col gap-4 px-4 py-4 flex-1 min-h-0">
         {/* Mode Toggle */}
-        <div className="flex items-center bg-[#111111] rounded-xl p-1 gap-1">
+        <div className="flex items-center bg-[#111111] rounded-xl p-1 gap-1 flex-shrink-0">
           {[['screenshot', Camera, 'Screenshot'], ['recording', Video, 'Recording']].map(([mode, Icon, label]) => (
             <button key={mode} onClick={() => setActiveMode(mode)}
               className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
@@ -57,14 +64,14 @@ export default function LauncherWindow() {
         </div>
 
         {/* Capture Type */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 flex-shrink-0">
           <p className="text-[#9CA3AF] text-xs font-medium uppercase tracking-widest px-1">Capture Area</p>
           {[
             ['region', Globe, 'Region', 'Draw a selection on screen'],
             ['fullscreen', Monitor, 'Full Screen', 'Capture entire display'],
           ].map(([val, Icon, title, desc]) => (
             <label key={val}
-              className={`flex items-center gap-3 px-3 py-3 rounded-xl border cursor-pointer transition-all duration-150 ${
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border cursor-pointer transition-all duration-150 ${
                 captureType === val ? 'border-[#3B82F6] bg-[#3B82F6]/10' : 'border-[#2A2A2D] hover:border-[#3A3A3D]'
               }`}>
               <input type="radio" name="captureType" value={val}
@@ -85,8 +92,8 @@ export default function LauncherWindow() {
         </div>
       </div>
 
-      {/* Footer CTA */}
-      <div className="px-4 pb-4">
+      {/* Footer CTA — pinned to bottom */}
+      <div className="px-4 pb-4 flex-shrink-0">
         <button
           onClick={handleCapture}
           className="w-full bg-[#F9FAFB] hover:bg-white active:scale-[0.98] text-[#111111] font-semibold text-sm py-3 rounded-xl transition-all duration-150 flex items-center justify-center gap-2">

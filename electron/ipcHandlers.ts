@@ -1,7 +1,7 @@
 /**
  * @file ipcHandlers.ts
- * Registers all Electron IPC handlers for Glimpse in one place.
- * Handles save, clipboard, settings, close-overlay, and retake-capture.
+ * All IPC handlers for Glimpse.
+ * Receives safeHideOverlay so close/retake always use the safe path.
  */
 
 import { app, clipboard, dialog, ipcMain, nativeImage, BrowserWindow } from 'electron';
@@ -14,6 +14,7 @@ interface Deps {
   getLauncherWindow: () => BrowserWindow | null;
   getOverlayWindow: () => BrowserWindow | null;
   triggerCapture: () => Promise<void>;
+  safeHideOverlay: () => void;
 }
 
 const store = new Store<AppSettings>({
@@ -40,15 +41,13 @@ export function registerIpcHandlers(deps: Deps): void {
     clipboard.writeImage(nativeImage.createFromDataURL(dataUrl));
   });
 
+  // SAFETY: Always use safeHideOverlay — never just win.hide()
   ipcMain.on('close-overlay', () => {
-    deps.getOverlayWindow()?.hide();
-    deps.getOverlayWindow()?.webContents.send('reset-overlay');
-    deps.getLauncherWindow()?.show();
+    deps.safeHideOverlay();
   });
 
   ipcMain.on('retake-capture', async () => {
-    deps.getOverlayWindow()?.hide();
-    deps.getOverlayWindow()?.webContents.send('reset-overlay');
+    deps.safeHideOverlay();
     await new Promise((r) => setTimeout(r, 300));
     await deps.triggerCapture();
   });

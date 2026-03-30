@@ -1,8 +1,7 @@
 /**
  * App.jsx — Renderer entry point for Glimpse.
- * Detects window type from URL query param and renders the correct root component.
- * ?window=launcher → LauncherWindow
- * ?window=overlay  → Overlay
+ * Routes to LauncherWindow or Overlay based on ?window= query param.
+ * No scrollable wrapper — each window renders at exact native size.
  */
 
 import React from 'react';
@@ -13,13 +12,11 @@ export default function App() {
   const params = new URLSearchParams(window.location.search);
   const windowType = params.get('window');
 
+  // Overlay: fullscreen, no padding, no background wrapper
   if (windowType === 'overlay') {
     return <Overlay />;
   }
 
-  return (
-    <div className="min-h-screen bg-[#111111] flex items-center justify-center p-8">
-      <LauncherWindow />
-    </div>
-  );
+  // Launcher: fixed 320x300, no scroll, exact fit
+  return <LauncherWindow />;
 }
