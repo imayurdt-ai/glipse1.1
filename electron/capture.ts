@@ -1,7 +1,6 @@
 /**
  * @file capture.ts
  * Screen capture using desktopCapturer.
- * Uses explicit size (not fullscreen flag) to avoid Windows black-screen bug.
  */
 
 import { BrowserWindow, desktopCapturer, screen } from 'electron';
@@ -18,7 +17,6 @@ export async function captureFullScreen(): Promise<string> {
 
   if (!sources.length) throw new Error('[Glimpse] No screen capture source found.');
 
-  // Prefer exact display match, fall back to first source
   const source = sources.find((s) => s.display_id === String(display.id)) ?? sources[0];
   const dataUrl = source.thumbnail.toDataURL();
   if (!dataUrl || dataUrl.length < 100) throw new Error('[Glimpse] Screen thumbnail empty.');
@@ -32,20 +30,21 @@ export async function captureWithOverlay(
 ): Promise<void> {
   launcherWindow.hide();
 
-  // Wait for launcher to fully disappear from screen before capturing
-  await new Promise((r) => setTimeout(r, 220));
+  // Wait for launcher to fully disappear before screenshotting
+  await new Promise((r) => setTimeout(r, 250));
 
   const image = await captureFullScreen();
 
-  // Reset any stale state first
+  // Reset stale state in overlay renderer
   overlayWindow.webContents.send('reset-overlay');
-  // Small gap so reset processes before new image arrives
-  await new Promise((r) => setTimeout(r, 50));
+  await new Promise((r) => setTimeout(r, 60));
 
+  // Send the screenshot
   overlayWindow.webContents.send('send-capture-image', image);
 
-  // Show without taking focus from other apps until user interacts
+  // Use show() not showInactive() — showInactive on transparent windows
+  // does not reliably bring the window to front on Windows
   overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1);
-  overlayWindow.showInactive();
+  overlayWindow.show();
   overlayWindow.focus();
 }
