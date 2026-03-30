@@ -1,7 +1,9 @@
 /**
  * @file ipcHandlers.ts
  * All IPC handlers for Glimpse.
- * Receives safeHideOverlay so close/retake always use the safe path.
+ * start-capture: fresh trigger (from launcher button / shortcut)
+ * retake-capture: hide current overlay then re-trigger
+ * close-overlay: safe dismiss
  */
 
 import { app, clipboard, dialog, ipcMain, nativeImage, BrowserWindow } from 'electron';
@@ -41,15 +43,21 @@ export function registerIpcHandlers(deps: Deps): void {
     clipboard.writeImage(nativeImage.createFromDataURL(dataUrl));
   });
 
-  // SAFETY: Always use safeHideOverlay — never just win.hide()
-  ipcMain.on('close-overlay', () => {
-    deps.safeHideOverlay();
+  // Fresh capture from launcher button — no prior overlay to clean up
+  ipcMain.on('start-capture', () => {
+    void deps.triggerCapture();
   });
 
+  // Retake from FloatingActionBar — hide current overlay first
   ipcMain.on('retake-capture', async () => {
     deps.safeHideOverlay();
     await new Promise((r) => setTimeout(r, 300));
     await deps.triggerCapture();
+  });
+
+  // Safe dismiss — always via safeHideOverlay
+  ipcMain.on('close-overlay', () => {
+    deps.safeHideOverlay();
   });
 
   ipcMain.handle('get-settings', () => ({

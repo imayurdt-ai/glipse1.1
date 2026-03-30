@@ -2,25 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Disable all scroll — Glimpse windows are fixed-size, never scrollable */
-html,
-body,
-#root {
+/*
+  Glimpse — all windows are fixed-size, never scrollable.
+  The critical height/overflow rules live in index.html <style>
+  so they apply before any JS loads. These reinforce that here.
+*/
+html, body, #root {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow: hidden !important;
   background: transparent;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* Prevent text selection on UI chrome */
   user-select: none;
   -webkit-user-select: none;
 }
 
-/* Allow text selection inside inputs and text annotations only */
 input, textarea {
   user-select: text;
   -webkit-user-select: text;

@@ -17,6 +17,7 @@ export interface AppSettings {
 export interface ElectronApi {
   onCaptureImage: (cb: (dataUrl: string) => void) => () => void;
   onResetOverlay: (cb: () => void) => () => void;
+  startCapture: () => void;
   saveImage: (dataUrl: string, filename: string) => Promise<{ canceled: boolean; filePath?: string }>;
   copyToClipboard: (dataUrl: string) => Promise<void>;
   closeOverlay: () => void;
@@ -43,11 +44,14 @@ const api: ElectronApi = {
     ipcRenderer.removeAllListeners('reset-overlay');
     return listen('reset-overlay', cb);
   },
+  // Fresh first-time capture — does NOT call safeHideOverlay first
+  startCapture: () => ipcRenderer.send('start-capture'),
   saveImage: (dataUrl, filename) =>
     ipcRenderer.invoke('save-image', dataUrl, filename),
   copyToClipboard: (dataUrl) =>
     ipcRenderer.invoke('copy-to-clipboard', dataUrl),
   closeOverlay: () => ipcRenderer.send('close-overlay'),
+  // Retake: hides current overlay then re-triggers
   retakeCapture: () => ipcRenderer.send('retake-capture'),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
