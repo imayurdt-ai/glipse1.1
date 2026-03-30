@@ -37,6 +37,10 @@ function windowUrl(name: 'launcher' | 'overlay'): string {
   return url;
 }
 
+// Preload is compiled as CJS so it must use the .cjs extension
+// to avoid Node treating it as ESM (because package.json has "type":"module")
+const preloadPath = path.join(__dirname, 'preload.cjs');
+
 export function safeHideOverlay(): void {
   console.log('[Main] safeHideOverlay called');
   if (overlayDismissTimer) { clearTimeout(overlayDismissTimer); overlayDismissTimer = null; }
@@ -61,27 +65,22 @@ function createLauncherWindow(): BrowserWindow {
     frame: false, show: true,
     backgroundColor: '#1C1C1E',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
   });
   void win.loadURL(windowUrl('launcher'));
-  win.webContents.on('did-finish-load', () =>
-    console.log('[Main] Launcher did-finish-load'));
-  win.webContents.on('dom-ready', () =>
-    console.log('[Main] Launcher dom-ready'));
-  win.webContents.on('did-fail-load', (_e, code, desc) =>
-    console.error(`[Main] Launcher load FAILED: ${code} ${desc}`));
-  win.webContents.on('console-message', (_e, level, msg, line, src) =>
-    console.log(`[Launcher-Renderer] ${msg}  (${src}:${line})`));
+  win.webContents.on('did-finish-load', () => console.log('[Main] Launcher did-finish-load'));
+  win.webContents.on('did-fail-load',   (_e, code, desc) => console.error(`[Main] Launcher FAILED: ${code} ${desc}`));
+  win.webContents.on('console-message', (_e, _lvl, msg, line, src) => console.log(`[Launcher-Renderer] ${msg}  (${src}:${line})`));
   return win;
 }
 
 function createOverlayWindow(): BrowserWindow {
   const { width, height } = screen.getPrimaryDisplay().bounds;
-  console.log(`[Main] Creating overlay window ${width}x${height}`);
+  console.log(`[Main] Creating overlay window ${width}x${height}, preload: ${preloadPath}`);
   const win = new BrowserWindow({
     width, height, x: 0, y: 0,
     transparent: true, frame: false,
@@ -92,39 +91,23 @@ function createOverlayWindow(): BrowserWindow {
     fullscreenable: false, hasShadow: false,
     backgroundColor: '#00000000',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
     },
   });
   void win.loadURL(windowUrl('overlay'));
-  win.webContents.on('did-finish-load', () =>
-    console.log('[Main] Overlay did-finish-load'));
-  win.webContents.on('dom-ready', () =>
-    console.log('[Main] Overlay dom-ready'));
-  win.webContents.on('did-fail-load', (_e, code, desc) =>
-    console.error(`[Main] Overlay load FAILED: ${code} ${desc}`));
-  // Forward ALL renderer console.log calls to main process terminal
-  win.webContents.on('console-message', (_e, level, msg, line, src) =>
-    console.log(`[Overlay-Renderer] ${msg}  (${src}:${line})`));
-  win.webContents.on('render-process-gone', (_e, details) => {
-    console.error('[Main] Overlay render-process-gone:', details);
-    safeHideOverlay();
-  });
-  win.webContents.on('unresponsive', () => {
-    console.error('[Main] Overlay unresponsive');
-    safeHideOverlay();
-  });
+  win.webContents.on('did-finish-load',      () => console.log('[Main] Overlay did-finish-load'));
+  win.webContents.on('did-fail-load',        (_e, code, desc) => console.error(`[Main] Overlay FAILED: ${code} ${desc}`));
+  win.webContents.on('console-message',      (_e, _lvl, msg, line, src) => console.log(`[Overlay-Renderer] ${msg}  (${src}:${line})`));
+  win.webContents.on('render-process-gone',  (_e, details) => { console.error('[Main] Overlay render-process-gone:', details); safeHideOverlay(); });
   return win;
 }
 
 export async function triggerCapture(): Promise<void> {
   console.log('[Main] triggerCapture called');
-  if (!overlayWindow || !launcherWindow) {
-    console.error('[Main] triggerCapture: windows not ready');
-    return;
-  }
+  if (!overlayWindow || !launcherWindow) { console.error('[Main] windows not ready'); return; }
   if (overlayDismissTimer) { clearTimeout(overlayDismissTimer); overlayDismissTimer = null; }
   try {
     await captureWithOverlay(overlayWindow, launcherWindow);
@@ -151,6 +134,7 @@ function createTray(): Tray {
 
 async function bootstrap(): Promise<void> {
   console.log('[Main] bootstrap start, isDev =', isDev);
+  console.log('[Main] preload path:', preloadPath);
   launcherWindow = createLauncherWindow();
   overlayWindow  = createOverlayWindow();
   tray           = createTray();
@@ -162,13 +146,10 @@ async function bootstrap(): Promise<void> {
     setOverlayRendererReady,
   });
   const ok = globalShortcut.register('CommandOrControl+Shift+5', () => void triggerCapture());
-  console.log('[Main] Shortcut registered:', ok);
+  console.log('[Main] Shortcut Ctrl+Shift+5 registered:', ok);
 }
 
 app.whenReady().then(() => void bootstrap());
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) void bootstrap();
-  else launcherWindow?.show();
-});
+app.on('activate',          () => { if (BrowserWindow.getAllWindows().length === 0) void bootstrap(); else launcherWindow?.show(); });
 app.on('will-quit',         () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => app.quit());
