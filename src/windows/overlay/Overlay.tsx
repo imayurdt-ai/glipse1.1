@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useMemo, useRef } from 'react';
+import Konva from 'konva';
 import {
   Arrow, Circle, Image as KonvaImage,
   Layer, Line, Rect, Stage, Text,
@@ -14,14 +15,18 @@ import FloatingActionBar from '../../components/FloatingActionBar';
 import { useAnnotation } from '../../hooks/useAnnotation';
 import { useAppStore, type Annotation } from '../../store/useAppStore';
 
+// ─ Shape renderer ───────────────────────────────────────────────────────────────────
+
 function Shape({ a }: { a: Annotation }) {
   const common = { stroke: a.color, strokeWidth: a.weight, listening: false };
   if (a.tool === 'pen')    return <Line points={a.points ?? []} {...common} lineCap="round" lineJoin="round" />;
-  if (a.tool === 'arrow')  return <Arrow points={a.points ?? []} {...common} fill={a.color} pointerLength={10} pointerWidth={8} />;
+  if (a.tool === 'arrow')  return <Arrow points={a.points ?? []} {...common} fill={a.color} pointerLength={12} pointerWidth={10} />;
   if (a.tool === 'square') return <Rect x={a.x} y={a.y} width={a.width} height={a.height} {...common} />;
   if (a.tool === 'circle') return <Circle x={a.x} y={a.y} radius={a.radius} {...common} />;
-  return <Text x={a.x} y={a.y} text={a.text ?? ''} fill={a.color} fontSize={18} listening={false} />;
+  return <Text x={a.x} y={a.y} text={a.text ?? ''} fill={a.color} fontSize={18} fontStyle="bold" listening={false} />;
 }
+
+// ─ Crop helper ──────────────────────────────────────────────────────────────────────
 
 function cropImage(src: string, rect: { x: number; y: number; w: number; h: number }): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -38,6 +43,8 @@ function cropImage(src: string, rect: { x: number; y: number; w: number; h: numb
     img.src = src;
   });
 }
+
+// ─ Phase A: Selection ──────────────────────────────────────────────────────────────
 
 function SelectionPhase({ sourceImage }: { sourceImage: string }) {
   const setCapturedImage = useAppStore((s) => s.setCapturedImage);
@@ -72,9 +79,8 @@ function SelectionPhase({ sourceImage }: { sourceImage: string }) {
     startRef.current = null;
     if (w < 8 || h < 8) { setLiveRect(null); return; }
     console.log(`[Overlay] Region selected: ${Math.round(w)}x${Math.round(h)} at (${Math.round(x)},${Math.round(y)})`);
-    const rect    = { x, y, w, h };
-    const cropped = await cropImage(sourceImage, rect);
-    setSelectionRect(rect);
+    const cropped = await cropImage(sourceImage, { x, y, w, h });
+    setSelectionRect({ x, y, w, h });
     setCapturedImage(cropped);
   };
 
@@ -84,14 +90,13 @@ function SelectionPhase({ sourceImage }: { sourceImage: string }) {
       onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
       {!liveRect && (
         <p className="absolute inset-0 flex items-center justify-center text-white/60 text-sm font-medium pointer-events-none">
-          Click and drag to select a region
+          Click and drag to select a region — <kbd className="ml-1 px-1.5 py-0.5 bg-white/10 rounded font-mono text-white text-xs">Esc</kbd> to cancel
         </p>
       )}
       {liveRect && liveRect.w > 0 && (
         <>
           <div className="absolute pointer-events-none" style={{
-            left: liveRect.x, top: liveRect.y,
-            width: liveRect.w, height: liveRect.h,
+            left: liveRect.x, top: liveRect.y, width: liveRect.w, height: liveRect.h,
             boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)',
             outline: '2px solid rgba(255,255,255,0.9)',
             background: 'transparent',
@@ -102,30 +107,50 @@ function SelectionPhase({ sourceImage }: { sourceImage: string }) {
           </div>
         </>
       )}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 pointer-events-none">
-        <span className="text-white/50 text-xs">
-          Press <kbd className="px-1.5 py-0.5 bg-white/10 rounded font-mono text-white text-xs">Esc</kbd> to cancel
-        </span>
-      </div>
     </div>
   );
 }
 
-function AnnotationPhase({ croppedImage, rect }: {
+// ─ Phase B: Annotation ────────────────────────────────────────────────────────────
+
+function AnnotationPhase({
+  croppedImage,
+  rect,
+}: {
   croppedImage: string;
   rect: { x: number; y: number; w: number; h: number };
 }) {
   const annotations = useAppStore((s) => s.annotations);
+  const setTool     = useAppStore((s) => s.setTool);
   const { currentAnnotation, handleStageMouseDown, handleStageMouseMove, handleStageMouseUp } = useAnnotation();
   const [bgImage] = useImage(croppedImage);
+
+  // Ref to Konva Stage so FloatingActionBar can call stageRef.toDataURL()
+  const stageRef = useRef<Konva.Stage>(null);
+
+  // Default to arrow tool when annotation phase mounts
+  useEffect(() => {
+    setTool('arrow');
+  }, [setTool]);
+
+  // Expose stageRef globally so FloatingActionBar can flatten it
+  useEffect(() => {
+    (window as any).__glimpseStage = stageRef.current;
+    return () => { delete (window as any).__glimpseStage; };
+  }, [stageRef.current]);
+
   return (
     <div className="fixed inset-0" style={{ background: 'rgba(0,0,0,0.6)' }}>
+      {/* Annotation canvas over selected region */}
       <div className="absolute" style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}>
-        <Stage width={rect.w} height={rect.h}
+        <Stage
+          ref={stageRef}
+          width={rect.w} height={rect.h}
           onMouseDown={handleStageMouseDown}
           onMouseMove={handleStageMouseMove}
           onMouseUp={handleStageMouseUp}
-          style={{ cursor: 'crosshair', display: 'block' }}>
+          style={{ cursor: 'crosshair', display: 'block' }}
+        >
           <Layer>
             {bgImage && <KonvaImage image={bgImage} width={rect.w} height={rect.h} />}
             {annotations.map((a) => <Shape key={a.id} a={a} />)}
@@ -133,9 +158,11 @@ function AnnotationPhase({ croppedImage, rect }: {
           </Layer>
         </Stage>
       </div>
+
+      {/* FloatingActionBar below selected region */}
       <div className="absolute" style={{
         left: rect.x + rect.w / 2,
-        top: Math.min(rect.y + rect.h + 20, window.innerHeight - 80),
+        top: Math.min(rect.y + rect.h + 20, window.innerHeight - 72),
         transform: 'translateX(-50%)',
       }}>
         <FloatingActionBar />
@@ -143,6 +170,8 @@ function AnnotationPhase({ croppedImage, rect }: {
     </div>
   );
 }
+
+// ─ Root ─────────────────────────────────────────────────────────────────────────────
 
 export default function Overlay() {
   const sourceImage    = useAppStore((s) => s.sourceImage);
@@ -153,44 +182,34 @@ export default function Overlay() {
 
   useEffect(() => {
     console.log('[Overlay] useEffect running, window.electron =', typeof window.electron);
-
     if (!window.electron) {
       console.error('[Overlay] window.electron is UNDEFINED — preload did not run or contextBridge failed');
       return;
     }
-
     const offCapture = window.electron.onCaptureImage((img) => {
       console.log('[Overlay] onCaptureImage fired, img length:', img.length);
       reset();
       setSourceImage(img);
     });
-
     const offReset = window.electron.onResetOverlay(() => {
       console.log('[Overlay] onResetOverlay fired');
       reset();
     });
-
     console.log('[Overlay] Listeners registered — calling rendererReady()');
     window.electron.rendererReady();
-
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        console.log('[Overlay] ESC pressed — closing overlay');
+        console.log('[Overlay] ESC — closing overlay');
         window.electron.closeOverlay();
       }
     };
     window.addEventListener('keydown', onKey);
-
-    return () => {
-      offCapture();
-      offReset();
-      window.removeEventListener('keydown', onKey);
-    };
+    return () => { offCapture(); offReset(); window.removeEventListener('keydown', onKey); };
   }, [reset, setSourceImage]);
 
   console.log('[Overlay] render — sourceImage:', !!sourceImage, 'capturedImage:', !!capturedImage);
 
-  if (!sourceImage) return <div className="fixed inset-0" style={{ background: 'transparent' }} />;
-  if (!capturedImage || !selectionRect) return <SelectionPhase sourceImage={sourceImage} />;
+  if (!sourceImage)                       return <div className="fixed inset-0" style={{ background: 'transparent' }} />;
+  if (!capturedImage || !selectionRect)   return <SelectionPhase sourceImage={sourceImage} />;
   return <AnnotationPhase croppedImage={capturedImage} rect={selectionRect} />;
 }
