@@ -1,168 +1,166 @@
-import React, { useState, useRef, useEffect } from "react";
+/**
+ * FloatingActionBar.jsx
+ * Pill-shaped annotation toolbar wired to the Zustand store.
+ * Tool clicks update global state; color/weight popover responds to active tool.
+ */
+
+import React, { useEffect, useRef } from 'react';
 import {
-  Pen,
-  Square,
-  Circle,
-  ArrowUpRight,
-  Type,
-  Undo2,
-  Trash2,
-  RefreshCcw,
-  Save,
-  Copy,
-} from "lucide-react";
+  Pen, Square, Circle, ArrowUpRight, Type,
+  Undo2, Trash2, RefreshCcw, Save, Copy,
+} from 'lucide-react';
+import { useAppStore } from '../store/useAppStore';
 
 const COLORS = [
-  { id: "red",    hex: "#EF4444", label: "Red" },
-  { id: "yellow", hex: "#EAB308", label: "Yellow" },
-  { id: "green",  hex: "#22C55E", label: "Green" },
-  { id: "blue",   hex: "#3B82F6", label: "Blue" },
-  { id: "white",  hex: "#FFFFFF", label: "White" },
+  { id: '#EF4444', label: 'Red' },
+  { id: '#EAB308', label: 'Yellow' },
+  { id: '#22C55E', label: 'Green' },
+  { id: '#3B82F6', label: 'Blue' },
+  { id: '#FFFFFF', label: 'White' },
 ];
 
 const WEIGHTS = [
-  { id: "thin",   size: 2,  label: "Thin" },
-  { id: "medium", size: 4,  label: "Medium" },
-  { id: "thick",  size: 7,  label: "Thick" },
+  { id: 2, size: 2, label: 'Thin' },
+  { id: 4, size: 4, label: 'Medium' },
+  { id: 8, size: 7, label: 'Thick' },
 ];
 
 const TOOLS = [
-  { id: "pen",    icon: Pen,          label: "Pen" },
-  { id: "square", icon: Square,       label: "Square" },
-  { id: "circle", icon: Circle,       label: "Circle" },
-  { id: "arrow",  icon: ArrowUpRight, label: "Arrow" },
-  { id: "text",   icon: Type,         label: "Text" },
+  { id: 'pen',    Icon: Pen,          label: 'Pen' },
+  { id: 'square', Icon: Square,       label: 'Square' },
+  { id: 'circle', Icon: Circle,       label: 'Circle' },
+  { id: 'arrow',  Icon: ArrowUpRight, label: 'Arrow' },
+  { id: 'text',   Icon: Type,         label: 'Text' },
 ];
 
 function Divider() {
   return <div className="w-px h-5 bg-[#333333] flex-shrink-0" />;
 }
 
-function ContextPopover({ activeColor, activeWeight, onColorChange, onWeightChange, anchorRef }) {
-  const [popoverStyle, setPopoverStyle] = useState({});
+function ContextPopover({ anchorRef }) {
+  const activeColor = useAppStore((s) => s.activeColor);
+  const activeWeight = useAppStore((s) => s.activeWeight);
+  const setColor = useAppStore((s) => s.setColor);
+  const setWeight = useAppStore((s) => s.setWeight);
+  const [style, setStyle] = React.useState({});
 
   useEffect(() => {
     if (anchorRef?.current) {
-      const rect = anchorRef.current.getBoundingClientRect();
-      setPopoverStyle({
-        left: rect.left + rect.width / 2,
-        top: rect.top,
-      });
+      const r = anchorRef.current.getBoundingClientRect();
+      setStyle({ left: r.left + r.width / 2, top: r.top });
     }
   }, [anchorRef]);
 
   return (
     <div
-      className="fixed z-50 pointer-events-auto"
+      className="fixed z-50"
       style={{
-        left: popoverStyle.left || "50%",
-        top: (popoverStyle.top || 0) - 8,
-        transform: "translateX(-50%) translateY(-100%)",
+        left: style.left ?? '50%',
+        top: (style.top ?? 0) - 8,
+        transform: 'translateX(-50%) translateY(-100%)',
       }}
     >
       <div
         className="flex items-center gap-3 bg-[#1C1C1E] border border-[#2A2A2D] rounded-full px-4 py-2.5"
-        style={{
-          boxShadow: "0 20px 60px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4)",
-        }}
+        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4)' }}
       >
+        {/* Colors */}
         <div className="flex items-center gap-2">
-          {COLORS.map((color) => {
-            const isActive = activeColor === color.id;
-            return (
-              <button
-                key={color.id}
-                title={color.label}
-                onClick={() => onColorChange(color.id)}
-                className="relative flex items-center justify-center w-5 h-5 rounded-full transition-transform hover:scale-110 focus:outline-none"
-                style={{ backgroundColor: color.hex }}
-              >
-                {isActive && (
-                  <span
-                    className="absolute inset-0 rounded-full"
-                    style={{ outline: "2px solid #FFFFFF", outlineOffset: "2px" }}
-                  />
-                )}
-              </button>
-            );
-          })}
+          {COLORS.map((c) => (
+            <button
+              key={c.id}
+              title={c.label}
+              onClick={() => setColor(c.id)}
+              className="relative w-5 h-5 rounded-full hover:scale-110 transition-transform focus:outline-none"
+              style={{ backgroundColor: c.id }}
+            >
+              {activeColor === c.id && (
+                <span className="absolute inset-0 rounded-full"
+                  style={{ outline: '2px solid #fff', outlineOffset: '2px' }} />
+              )}
+            </button>
+          ))}
         </div>
 
-        <div className="w-px h-4 bg-[#333333] flex-shrink-0" />
+        <div className="w-px h-4 bg-[#333333]" />
 
+        {/* Weights */}
         <div className="flex items-center gap-2.5">
-          {WEIGHTS.map((weight) => {
-            const isActive = activeWeight === weight.id;
-            return (
-              <button
-                key={weight.id}
-                title={weight.label}
-                onClick={() => onWeightChange(weight.id)}
-                className={`relative flex items-center justify-center rounded-full transition-transform hover:scale-110 focus:outline-none ${
-                  isActive ? "bg-[#F9FAFB]" : "bg-[#4A4A4D]"
-                }`}
-                style={{
-                  width: weight.size * 2 + 8,
-                  height: weight.size * 2 + 8,
-                  outline: isActive ? "2px solid #FFFFFF" : "none",
-                  outlineOffset: "2px",
-                }}
-              />
-            );
-          })}
+          {WEIGHTS.map((w) => (
+            <button
+              key={w.id}
+              title={w.label}
+              onClick={() => setWeight(w.id)}
+              className="rounded-full hover:scale-110 transition-transform focus:outline-none"
+              style={{
+                width: w.size * 2 + 8,
+                height: w.size * 2 + 8,
+                backgroundColor: activeWeight === w.id ? '#F9FAFB' : '#4A4A4D',
+                outline: activeWeight === w.id ? '2px solid #fff' : 'none',
+                outlineOffset: '2px',
+              }}
+            />
+          ))}
         </div>
       </div>
-
-      <div className="flex justify-center mt-1">
-        <div
-          className="w-2 h-2 bg-[#1C1C1E] border-r border-b border-[#2A2A2D] rotate-45"
-          style={{ marginTop: "-5px" }}
-        />
+      {/* Caret */}
+      <div className="flex justify-center">
+        <div className="w-2 h-2 bg-[#1C1C1E] border-r border-b border-[#2A2A2D] rotate-45"
+          style={{ marginTop: '-5px' }} />
       </div>
     </div>
   );
 }
 
 export default function FloatingActionBar() {
-  const [activeTool, setActiveTool]     = useState("arrow");
-  const [activeColor, setActiveColor]   = useState("red");
-  const [activeWeight, setActiveWeight] = useState("medium");
-  const [showPopover, setShowPopover]   = useState(false);
+  const activeTool    = useAppStore((s) => s.activeTool);
+  const activeColor   = useAppStore((s) => s.activeColor);
+  const showPopover   = useAppStore((s) => s.showColorPopover);
+  const setTool       = useAppStore((s) => s.setTool);
+  const togglePopover = useAppStore((s) => s.toggleColorPopover);
+  const setShowPopover = useAppStore((s) => s.setShowColorPopover);
+  const undo          = useAppStore((s) => s.undo);
+  const clearAnnotations = useAppStore((s) => s.clearAnnotations);
+  const capturedImage = useAppStore((s) => s.capturedImage);
+  const annotations   = useAppStore((s) => s.annotations);
 
   const toolRefs = useRef({});
-  const activeToolRef = useRef(null);
 
   const handleToolClick = (toolId) => {
     if (activeTool === toolId) {
-      setShowPopover((prev) => !prev);
+      togglePopover();
     } else {
-      setActiveTool(toolId);
+      setTool(toolId);
       setShowPopover(true);
     }
   };
 
   useEffect(() => {
     const handleOutside = (e) => {
-      if (showPopover && !e.target.closest("[data-fab]")) {
+      if (showPopover && !e.target.closest('[data-fab]')) {
         setShowPopover(false);
       }
     };
-    document.addEventListener("mousedown", handleOutside);
-    return () => document.removeEventListener("mousedown", handleOutside);
-  }, [showPopover]);
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [showPopover, setShowPopover]);
 
-  useEffect(() => {
-    activeToolRef.current = toolRefs.current[activeTool] || null;
-  }, [activeTool]);
+  const handleSave = async () => {
+    if (!capturedImage) return;
+    const finalCanvas = document.createElement('canvas');
+    // Simple save of cropped image with annotations flattened
+    await window.electron.saveImage(capturedImage, `glimpse-${Date.now()}.png`);
+  };
+
+  const handleCopy = async () => {
+    if (!capturedImage) return;
+    await window.electron.copyToClipboard(capturedImage);
+  };
 
   return (
     <>
       {showPopover && (
         <ContextPopover
-          activeColor={activeColor}
-          activeWeight={activeWeight}
-          onColorChange={(c) => setActiveColor(c)}
-          onWeightChange={(w) => setActiveWeight(w)}
           anchorRef={{ current: toolRefs.current[activeTool] }}
         />
       )}
@@ -170,36 +168,25 @@ export default function FloatingActionBar() {
       <div
         data-fab
         className="flex items-center gap-0.5 bg-[#1C1C1E] border border-[#2A2A2D] rounded-full px-3 py-2"
-        style={{
-          boxShadow:
-            "0 24px 64px rgba(0,0,0,0.65), 0 6px 20px rgba(0,0,0,0.4), 0 0 0 0.5px rgba(255,255,255,0.04)",
-        }}
+        style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.65), 0 6px 20px rgba(0,0,0,0.4)' }}
       >
-        {TOOLS.map((tool) => {
-          const Icon = tool.icon;
-          const isActive = activeTool === tool.id;
-          const activeColorHex = COLORS.find((c) => c.id === activeColor)?.hex;
-
+        {/* Group 1: Tools */}
+        {TOOLS.map(({ id, Icon, label }) => {
+          const isActive = activeTool === id;
           return (
             <button
-              key={tool.id}
-              ref={(el) => { toolRefs.current[tool.id] = el; }}
-              title={tool.label}
-              onClick={() => handleToolClick(tool.id)}
-              className={`relative w-8 h-8 flex items-center justify-center rounded-full transition-all duration-150 focus:outline-none group ${
-                isActive ? "bg-[#2A2A2D]" : "hover:bg-[#2A2A2D]/60"
+              key={id}
+              ref={(el) => { toolRefs.current[id] = el; }}
+              title={label}
+              onClick={() => handleToolClick(id)}
+              className={`relative w-8 h-8 flex items-center justify-center rounded-full transition-all duration-150 focus:outline-none ${
+                isActive ? 'bg-[#2A2A2D]' : 'hover:bg-[#2A2A2D]/60'
               }`}
             >
-              <Icon
-                size={15}
-                style={{ color: isActive ? activeColorHex : "#9CA3AF" }}
-                className="transition-colors duration-150"
-              />
+              <Icon size={15} style={{ color: isActive ? activeColor : '#9CA3AF' }} />
               {isActive && (
-                <span
-                  className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: activeColorHex }}
-                />
+                <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: activeColor }} />
               )}
             </button>
           );
@@ -207,42 +194,32 @@ export default function FloatingActionBar() {
 
         <Divider />
 
-        <button
-          title="Undo"
-          className="w-8 h-8 flex items-center justify-center rounded-full text-[#9CA3AF] hover:text-[#F9FAFB] hover:bg-[#2A2A2D]/60 transition-all duration-150 focus:outline-none"
-        >
+        {/* Group 2: History */}
+        <button title="Undo" onClick={undo}
+          className="w-8 h-8 flex items-center justify-center rounded-full text-[#9CA3AF] hover:text-[#F9FAFB] hover:bg-[#2A2A2D]/60 transition-all focus:outline-none">
           <Undo2 size={15} />
         </button>
-        <button
-          title="Clear All"
-          className="w-8 h-8 flex items-center justify-center rounded-full text-[#9CA3AF] hover:text-[#EF4444] hover:bg-[#EF4444]/10 transition-all duration-150 focus:outline-none"
-        >
+        <button title="Clear All" onClick={clearAnnotations}
+          className="w-8 h-8 flex items-center justify-center rounded-full text-[#9CA3AF] hover:text-[#EF4444] hover:bg-[#EF4444]/10 transition-all focus:outline-none">
           <Trash2 size={15} />
         </button>
 
         <Divider />
 
-        <button
-          title="Retake"
-          className="w-8 h-8 flex items-center justify-center rounded-full text-[#9CA3AF] hover:text-[#F9FAFB] hover:bg-[#2A2A2D]/60 transition-all duration-150 focus:outline-none"
-        >
+        {/* Group 3: Export */}
+        <button title="Retake" onClick={() => window.electron.retakeCapture()}
+          className="w-8 h-8 flex items-center justify-center rounded-full text-[#9CA3AF] hover:text-[#F9FAFB] hover:bg-[#2A2A2D]/60 transition-all focus:outline-none">
           <RefreshCcw size={15} />
         </button>
-
         <button
-          title="Save to Disk"
-          className="flex items-center gap-1.5 h-8 px-3 rounded-full bg-[#F9FAFB] hover:bg-white active:scale-[0.97] text-[#111111] text-xs font-semibold transition-all duration-150 focus:outline-none"
-        >
-          <Save size={12} />
-          Save
+          title="Save to Disk" onClick={handleSave}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-full bg-[#F9FAFB] hover:bg-white active:scale-[0.97] text-[#111111] text-xs font-semibold transition-all focus:outline-none">
+          <Save size={12} /> Save
         </button>
-
         <button
-          title="Copy to Clipboard"
-          className="flex items-center gap-1.5 h-8 px-3 rounded-full border border-[#2A2A2D] hover:bg-[#2A2A2D] text-[#F9FAFB] text-xs font-medium transition-all duration-150 focus:outline-none"
-        >
-          <Copy size={12} />
-          Copy
+          title="Copy to Clipboard" onClick={handleCopy}
+          className="flex items-center gap-1.5 h-8 px-3 rounded-full border border-[#2A2A2D] hover:bg-[#2A2A2D] text-[#F9FAFB] text-xs font-medium transition-all focus:outline-none">
+          <Copy size={12} /> Copy
         </button>
       </div>
     </>

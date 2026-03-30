@@ -1,39 +1,64 @@
-# Glimpse UI — v1.1
+# Glimpse — v1.1
 
-Minimalist desktop screenshot app UI built with **React + Tailwind CSS**.
+Minimalist desktop screenshot + annotation app built with **Electron + React + Tailwind CSS + Zustand + Konva**.
 
-## Components
+## Architecture
 
-| Component | Description |
-|---|---|
-| `LauncherWindow` | Small 320×280px main app window with mode toggle and capture type selector |
-| `CaptureOverlay` | Fullscreen dimmed overlay with drag-to-select region and dimension badge |
-| `FloatingActionBar` | Pill-shaped annotation toolbar with contextual color/weight popover |
+```
+glipse1.1/
+├── electron/
+│   ├── main.ts          ← App bootstrap, 2 windows, tray, shortcut
+│   ├── capture.ts       ← desktopCapturer pipeline
+│   ├── preload.ts       ← Typed contextBridge API
+│   ├── ipcHandlers.ts   ← All IPC: save, copy, settings, retake
+│   └── tsconfig.json
+├── src/
+│   ├── App.jsx                        ← Window router (?window=overlay|launcher)
+│   ├── store/useAppStore.ts           ← Zustand global store
+│   ├── hooks/
+│   │   ├── useCapture.ts              ← Mouse drag → selection rect
+│   │   └── useAnnotation.ts           ← Konva drawing engine
+│   ├── windows/overlay/Overlay.tsx    ← Phase A + Phase B overlay
+│   └── components/
+│       ├── LauncherWindow.jsx
+│       ├── FloatingActionBar.jsx      ← Wired to Zustand + IPC
+│       └── CaptureOverlay.jsx
+└── assets/tray-icon.png               ← Add a 16x16 PNG manually
+```
+
+## Getting Started
+
+```bash
+# Install all dependencies
+npm install
+
+# Run in browser only (UI preview)
+npm run dev
+
+# Run as full Electron app
+npm run dev:electron
+```
+
+## Global Shortcut
+
+`Ctrl+Shift+5` (Windows/Linux) or `Cmd+Shift+5` (macOS) triggers a new capture from anywhere.
 
 ## Design System — Mono Premium
 
 | Token | Value |
 |---|---|
 | App Background | `#111111` |
-| Surface/Panels | `#1C1C1E` |
+| Surface | `#1C1C1E` |
 | Primary Text | `#F9FAFB` |
 | Secondary Text | `#9CA3AF` |
 | Borders | `#2A2A2D` |
 
-## Getting Started
-
-```bash
-npm install
-npm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173) to preview all three components.
-
 ## Stack
 
-- React 18
+- Electron 30
+- React 18 + TypeScript
 - Tailwind CSS v3
-- Vite
-- Lucide React (icons)
-
-> **Note:** This is the UI shell only. Electron IPC, Zustand state, and Konva canvas are wired in Stage 2.
+- Zustand v4 (with localStorage persist)
+- React-Konva + Konva (annotation canvas)
+- Vite 5
+- electron-store (settings persistence)
