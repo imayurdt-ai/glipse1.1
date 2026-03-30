@@ -1,7 +1,6 @@
 /**
  * @file main.ts
  * Electron main process bootstrap for Glimpse.
- * SAFETY: Overlay has a hard 30s auto-dismiss timeout and ESC always works.
  */
 
 import { app, BrowserWindow, globalShortcut, Menu, Tray, nativeImage, screen } from 'electron';
@@ -40,7 +39,7 @@ export function safeHideOverlay(): void {
 function createLauncherWindow(): BrowserWindow {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   const WIN_W = 320;
-  const WIN_H = 360; // tall enough for both capture options + all controls
+  const WIN_H = 360;
   const win = new BrowserWindow({
     width: WIN_W,
     height: WIN_H,
@@ -59,9 +58,7 @@ function createLauncherWindow(): BrowserWindow {
     },
   });
   void win.loadURL(windowUrl('launcher'));
-  win.on('close', (e) => {
-    if (!isQuitting) { e.preventDefault(); win.hide(); }
-  });
+  // No close interception — allow normal OS close / app.quit() to work
   return win;
 }
 
@@ -112,7 +109,7 @@ function createTray(): Tray {
   const t = new Tray(icon);
   const menu = Menu.buildFromTemplate([
     { label: 'New Capture', click: () => void triggerCapture() },
-    { label: 'Settings', click: () => launcherWindow?.show() },
+    { label: 'Show', click: () => launcherWindow?.show() },
     { type: 'separator' },
     { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
   ]);
@@ -138,4 +135,7 @@ app.on('activate', () => {
 });
 app.on('before-quit', () => { isQuitting = true; });
 app.on('will-quit', () => globalShortcut.unregisterAll());
-app.on('window-all-closed', (e: Event) => e.preventDefault());
+// Now that X quits properly, we can allow window-all-closed to quit on non-mac
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});

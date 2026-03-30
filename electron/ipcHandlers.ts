@@ -40,9 +40,9 @@ export function registerIpcHandlers(deps: Deps): void {
     clipboard.writeImage(nativeImage.createFromDataURL(dataUrl));
   });
 
-  // X button on launcher — hide to tray (does NOT quit)
+  // X button — fully quit the app
   ipcMain.on('hide-launcher', () => {
-    deps.getLauncherWindow()?.hide();
+    app.quit();
   });
 
   // Fresh capture from launcher button or shortcut
