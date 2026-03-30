@@ -1,7 +1,6 @@
 /**
  * @file preload.ts
  * Secure contextBridge preload for Glimpse.
- * Exposes a strictly typed window.electron API to the renderer.
  */
 
 import { contextBridge, ipcRenderer } from 'electron';
@@ -18,18 +17,16 @@ export interface ElectronApi {
   onCaptureImage: (cb: (dataUrl: string) => void) => () => void;
   onResetOverlay: (cb: () => void) => () => void;
   startCapture: () => void;
+  hideLauncher: () => void;        // X button — hide launcher to tray
   saveImage: (dataUrl: string, filename: string) => Promise<{ canceled: boolean; filePath?: string }>;
   copyToClipboard: (dataUrl: string) => Promise<void>;
-  closeOverlay: () => void;
+  closeOverlay: () => void;        // overlay ESC / close
   retakeCapture: () => void;
   getSettings: () => Promise<AppSettings>;
   saveSettings: (s: AppSettings) => Promise<void>;
 }
 
-function listen<T extends unknown[]>(
-  channel: string,
-  cb: (...args: T) => void
-): () => void {
+function listen<T extends unknown[]>(channel: string, cb: (...args: T) => void): () => void {
   const handler = (_e: Electron.IpcRendererEvent, ...args: T) => cb(...args);
   ipcRenderer.on(channel, handler);
   return () => ipcRenderer.removeListener(channel, handler);
@@ -44,17 +41,14 @@ const api: ElectronApi = {
     ipcRenderer.removeAllListeners('reset-overlay');
     return listen('reset-overlay', cb);
   },
-  // Fresh first-time capture — does NOT call safeHideOverlay first
-  startCapture: () => ipcRenderer.send('start-capture'),
-  saveImage: (dataUrl, filename) =>
-    ipcRenderer.invoke('save-image', dataUrl, filename),
-  copyToClipboard: (dataUrl) =>
-    ipcRenderer.invoke('copy-to-clipboard', dataUrl),
-  closeOverlay: () => ipcRenderer.send('close-overlay'),
-  // Retake: hides current overlay then re-triggers
-  retakeCapture: () => ipcRenderer.send('retake-capture'),
-  getSettings: () => ipcRenderer.invoke('get-settings'),
-  saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
+  startCapture:    () => ipcRenderer.send('start-capture'),
+  hideLauncher:    () => ipcRenderer.send('hide-launcher'),
+  saveImage:       (dataUrl, filename) => ipcRenderer.invoke('save-image', dataUrl, filename),
+  copyToClipboard: (dataUrl) => ipcRenderer.invoke('copy-to-clipboard', dataUrl),
+  closeOverlay:    () => ipcRenderer.send('close-overlay'),
+  retakeCapture:   () => ipcRenderer.send('retake-capture'),
+  getSettings:     () => ipcRenderer.invoke('get-settings'),
+  saveSettings:    (s) => ipcRenderer.invoke('save-settings', s),
 };
 
 contextBridge.exposeInMainWorld('electron', api);
