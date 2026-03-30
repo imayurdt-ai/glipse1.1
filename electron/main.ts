@@ -15,7 +15,7 @@ import { registerIpcHandlers } from './ipcHandlers.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-const isDev  = !app.isPackaged;
+const isDev   = !app.isPackaged;
 const DEV_URL = 'http://localhost:5173';
 
 let launcherWindow: BrowserWindow | null = null;
@@ -23,19 +23,24 @@ let overlayWindow:  BrowserWindow | null = null;
 let tray: Tray | null = null;
 let overlayDismissTimer: ReturnType<typeof setTimeout> | null = null;
 
-// Tracks whether the overlay renderer has mounted & registered its IPC listeners.
-// Set to true by 'renderer-ready', reset to false whenever we hide the overlay.
 export let overlayRendererReady = false;
-export function setOverlayRendererReady(v: boolean) { overlayRendererReady = v; }
+export function setOverlayRendererReady(v: boolean) {
+  console.log(`[Main] overlayRendererReady → ${v}`);
+  overlayRendererReady = v;
+}
 
 function windowUrl(name: 'launcher' | 'overlay'): string {
-  if (isDev) return `${DEV_URL}/?window=${name}`;
-  return `file://${path.join(__dirname, '../dist/index.html')}?window=${name}`;
+  const url = isDev
+    ? `${DEV_URL}/?window=${name}`
+    : `file://${path.join(__dirname, '../dist/index.html')}?window=${name}`;
+  console.log(`[Main] windowUrl(${name}) = ${url}`);
+  return url;
 }
 
 export function safeHideOverlay(): void {
+  console.log('[Main] safeHideOverlay called');
   if (overlayDismissTimer) { clearTimeout(overlayDismissTimer); overlayDismissTimer = null; }
-  overlayRendererReady = false; // reset — renderer will re-signal on next show
+  overlayRendererReady = false;
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.hide();
     overlayWindow.setAlwaysOnTop(false);
@@ -63,11 +68,20 @@ function createLauncherWindow(): BrowserWindow {
     },
   });
   void win.loadURL(windowUrl('launcher'));
+  win.webContents.on('did-finish-load', () =>
+    console.log('[Main] Launcher did-finish-load'));
+  win.webContents.on('dom-ready', () =>
+    console.log('[Main] Launcher dom-ready'));
+  win.webContents.on('did-fail-load', (_e, code, desc) =>
+    console.error(`[Main] Launcher load FAILED: ${code} ${desc}`));
+  win.webContents.on('console-message', (_e, level, msg, line, src) =>
+    console.log(`[Launcher-Renderer] ${msg}  (${src}:${line})`));
   return win;
 }
 
 function createOverlayWindow(): BrowserWindow {
   const { width, height } = screen.getPrimaryDisplay().bounds;
+  console.log(`[Main] Creating overlay window ${width}x${height}`);
   const win = new BrowserWindow({
     width, height, x: 0, y: 0,
     transparent: true, frame: false,
@@ -85,19 +99,38 @@ function createOverlayWindow(): BrowserWindow {
     },
   });
   void win.loadURL(windowUrl('overlay'));
-  win.webContents.on('render-process-gone', () => safeHideOverlay());
-  win.webContents.on('unresponsive',         () => safeHideOverlay());
+  win.webContents.on('did-finish-load', () =>
+    console.log('[Main] Overlay did-finish-load'));
+  win.webContents.on('dom-ready', () =>
+    console.log('[Main] Overlay dom-ready'));
+  win.webContents.on('did-fail-load', (_e, code, desc) =>
+    console.error(`[Main] Overlay load FAILED: ${code} ${desc}`));
+  // Forward ALL renderer console.log calls to main process terminal
+  win.webContents.on('console-message', (_e, level, msg, line, src) =>
+    console.log(`[Overlay-Renderer] ${msg}  (${src}:${line})`));
+  win.webContents.on('render-process-gone', (_e, details) => {
+    console.error('[Main] Overlay render-process-gone:', details);
+    safeHideOverlay();
+  });
+  win.webContents.on('unresponsive', () => {
+    console.error('[Main] Overlay unresponsive');
+    safeHideOverlay();
+  });
   return win;
 }
 
 export async function triggerCapture(): Promise<void> {
-  if (!overlayWindow || !launcherWindow) return;
+  console.log('[Main] triggerCapture called');
+  if (!overlayWindow || !launcherWindow) {
+    console.error('[Main] triggerCapture: windows not ready');
+    return;
+  }
   if (overlayDismissTimer) { clearTimeout(overlayDismissTimer); overlayDismissTimer = null; }
   try {
     await captureWithOverlay(overlayWindow, launcherWindow);
     overlayDismissTimer = setTimeout(() => safeHideOverlay(), 30_000);
   } catch (err) {
-    console.error('[Glimpse] Capture error:', err);
+    console.error('[Main] Capture error:', err);
     safeHideOverlay();
   }
 }
@@ -117,20 +150,19 @@ function createTray(): Tray {
 }
 
 async function bootstrap(): Promise<void> {
+  console.log('[Main] bootstrap start, isDev =', isDev);
   launcherWindow = createLauncherWindow();
   overlayWindow  = createOverlayWindow();
   tray           = createTray();
-
   registerIpcHandlers({
-    getLauncherWindow:      () => launcherWindow,
-    getOverlayWindow:       () => overlayWindow,
+    getLauncherWindow:       () => launcherWindow,
+    getOverlayWindow:        () => overlayWindow,
     triggerCapture,
     safeHideOverlay,
     setOverlayRendererReady,
   });
-
   const ok = globalShortcut.register('CommandOrControl+Shift+5', () => void triggerCapture());
-  if (!ok) console.warn('[Glimpse] Could not register shortcut.');
+  console.log('[Main] Shortcut registered:', ok);
 }
 
 app.whenReady().then(() => void bootstrap());
@@ -138,5 +170,5 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) void bootstrap();
   else launcherWindow?.show();
 });
-app.on('will-quit',        () => globalShortcut.unregisterAll());
+app.on('will-quit',         () => globalShortcut.unregisterAll());
 app.on('window-all-closed', () => app.quit());

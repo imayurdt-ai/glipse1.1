@@ -1,6 +1,5 @@
 /**
  * @file Overlay.tsx
- * Fullscreen capture overlay.
  * Phase A — crosshair region selection.
  * Phase B — Konva annotation canvas + FloatingActionBar.
  */
@@ -40,32 +39,29 @@ function cropImage(src: string, rect: { x: number; y: number; w: number; h: numb
   });
 }
 
-// ─ Phase A: Selection ───────────────────────────────────────────────────────────────
-
 function SelectionPhase({ sourceImage }: { sourceImage: string }) {
   const setCapturedImage = useAppStore((s) => s.setCapturedImage);
   const setSelectionRect  = useAppStore((s) => s.setSelectionRect);
-
   const startRef   = useRef<{ x: number; y: number } | null>(null);
   const isDragging = useRef(false);
   const [liveRect, setLiveRect] = React.useState<{ x: number; y: number; w: number; h: number } | null>(null);
-
   const label = useMemo(() => liveRect ? `${Math.round(liveRect.w)} × ${Math.round(liveRect.h)}` : '', [liveRect]);
 
   const onMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
-    startRef.current = { x: e.clientX, y: e.clientY };
+    startRef.current  = { x: e.clientX, y: e.clientY };
     isDragging.current = true;
     setLiveRect({ x: e.clientX, y: e.clientY, w: 0, h: 0 });
   };
-
   const onMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isDragging.current || !startRef.current) return;
-    const x = Math.min(startRef.current.x, e.clientX);
-    const y = Math.min(startRef.current.y, e.clientY);
-    setLiveRect({ x, y, w: Math.abs(e.clientX - startRef.current.x), h: Math.abs(e.clientY - startRef.current.y) });
+    setLiveRect({
+      x: Math.min(startRef.current.x, e.clientX),
+      y: Math.min(startRef.current.y, e.clientY),
+      w: Math.abs(e.clientX - startRef.current.x),
+      h: Math.abs(e.clientY - startRef.current.y),
+    });
   };
-
   const onMouseUp = async (e: React.MouseEvent<HTMLDivElement>) => {
     if (!isDragging.current || !startRef.current) return;
     isDragging.current = false;
@@ -75,20 +71,17 @@ function SelectionPhase({ sourceImage }: { sourceImage: string }) {
     const h = Math.abs(e.clientY - startRef.current.y);
     startRef.current = null;
     if (w < 8 || h < 8) { setLiveRect(null); return; }
-    const rect = { x, y, w, h };
+    console.log(`[Overlay] Region selected: ${Math.round(w)}x${Math.round(h)} at (${Math.round(x)},${Math.round(y)})`);
+    const rect    = { x, y, w, h };
     const cropped = await cropImage(sourceImage, rect);
     setSelectionRect(rect);
     setCapturedImage(cropped);
   };
 
   return (
-    <div
-      className="fixed inset-0 select-none"
+    <div className="fixed inset-0 select-none"
       style={{ cursor: 'crosshair', background: 'rgba(0,0,0,0.55)' }}
-      onMouseDown={onMouseDown}
-      onMouseMove={onMouseMove}
-      onMouseUp={onMouseUp}
-    >
+      onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
       {!liveRect && (
         <p className="absolute inset-0 flex items-center justify-center text-white/60 text-sm font-medium pointer-events-none">
           Click and drag to select a region
@@ -97,7 +90,8 @@ function SelectionPhase({ sourceImage }: { sourceImage: string }) {
       {liveRect && liveRect.w > 0 && (
         <>
           <div className="absolute pointer-events-none" style={{
-            left: liveRect.x, top: liveRect.y, width: liveRect.w, height: liveRect.h,
+            left: liveRect.x, top: liveRect.y,
+            width: liveRect.w, height: liveRect.h,
             boxShadow: '0 0 0 9999px rgba(0,0,0,0.55)',
             outline: '2px solid rgba(255,255,255,0.9)',
             background: 'transparent',
@@ -117,18 +111,20 @@ function SelectionPhase({ sourceImage }: { sourceImage: string }) {
   );
 }
 
-// ─ Phase B: Annotation ─────────────────────────────────────────────────────────────
-
-function AnnotationPhase({ croppedImage, rect }: { croppedImage: string; rect: { x: number; y: number; w: number; h: number } }) {
+function AnnotationPhase({ croppedImage, rect }: {
+  croppedImage: string;
+  rect: { x: number; y: number; w: number; h: number };
+}) {
   const annotations = useAppStore((s) => s.annotations);
   const { currentAnnotation, handleStageMouseDown, handleStageMouseMove, handleStageMouseUp } = useAnnotation();
   const [bgImage] = useImage(croppedImage);
-
   return (
     <div className="fixed inset-0" style={{ background: 'rgba(0,0,0,0.6)' }}>
       <div className="absolute" style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h }}>
         <Stage width={rect.w} height={rect.h}
-          onMouseDown={handleStageMouseDown} onMouseMove={handleStageMouseMove} onMouseUp={handleStageMouseUp}
+          onMouseDown={handleStageMouseDown}
+          onMouseMove={handleStageMouseMove}
+          onMouseUp={handleStageMouseUp}
           style={{ cursor: 'crosshair', display: 'block' }}>
           <Layer>
             {bgImage && <KonvaImage image={bgImage} width={rect.w} height={rect.h} />}
@@ -148,8 +144,6 @@ function AnnotationPhase({ croppedImage, rect }: { croppedImage: string; rect: {
   );
 }
 
-// ─ Root ─────────────────────────────────────────────────────────────────────────────
-
 export default function Overlay() {
   const sourceImage    = useAppStore((s) => s.sourceImage);
   const capturedImage  = useAppStore((s) => s.capturedImage);
@@ -158,20 +152,32 @@ export default function Overlay() {
   const reset          = useAppStore((s) => s.reset);
 
   useEffect(() => {
-    if (!window.electron) return;
+    console.log('[Overlay] useEffect running, window.electron =', typeof window.electron);
 
-    // Register listeners FIRST, then signal ready
+    if (!window.electron) {
+      console.error('[Overlay] window.electron is UNDEFINED — preload did not run or contextBridge failed');
+      return;
+    }
+
     const offCapture = window.electron.onCaptureImage((img) => {
+      console.log('[Overlay] onCaptureImage fired, img length:', img.length);
       reset();
       setSourceImage(img);
     });
-    const offReset = window.electron.onResetOverlay(() => reset());
 
-    // Tell main process: "I'm mounted and listening, send the image now"
+    const offReset = window.electron.onResetOverlay(() => {
+      console.log('[Overlay] onResetOverlay fired');
+      reset();
+    });
+
+    console.log('[Overlay] Listeners registered — calling rendererReady()');
     window.electron.rendererReady();
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') window.electron.closeOverlay();
+      if (e.key === 'Escape') {
+        console.log('[Overlay] ESC pressed — closing overlay');
+        window.electron.closeOverlay();
+      }
     };
     window.addEventListener('keydown', onKey);
 
@@ -181,6 +187,8 @@ export default function Overlay() {
       window.removeEventListener('keydown', onKey);
     };
   }, [reset, setSourceImage]);
+
+  console.log('[Overlay] render — sourceImage:', !!sourceImage, 'capturedImage:', !!capturedImage);
 
   if (!sourceImage) return <div className="fixed inset-0" style={{ background: 'transparent' }} />;
   if (!capturedImage || !selectionRect) return <SelectionPhase sourceImage={sourceImage} />;
