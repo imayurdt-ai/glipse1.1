@@ -1,17 +1,18 @@
 /**
  * @file capture.ts
- * Screen capture with renderer-ready handshake.
+ * Screen capture pipeline.
  *
- * Flow:
- *   1. Hide both windows
- *   2. Wait for OS compositor to clear them (300ms)
+ * Safe order:
+ *   1. Hide both windows (so they don't appear in screenshot)
+ *   2. Wait 350ms for OS compositor to clear them
  *   3. Take screenshot
- *   4. Show overlay
- *   5. Wait for overlay renderer to signal 'renderer-ready'
- *   6. Send screenshot image
+ *   4. Show overlay window
+ *   5. Poll until overlayRendererReady flag is set (renderer called renderer-ready)
+ *   6. Send screenshot to renderer
  */
 
-import { BrowserWindow, desktopCapturer, ipcMain, screen } from 'electron';
+import { BrowserWindow, desktopCapturer, screen } from 'electron';
+import { overlayRendererReady } from './main.js';
 
 export async function captureFullScreen(): Promise<string> {
   const display = screen.getPrimaryDisplay();
@@ -30,34 +31,37 @@ export async function captureFullScreen(): Promise<string> {
 
 export async function captureWithOverlay(
   overlayWindow: BrowserWindow,
-  launcherWindow: BrowserWindow
+  launcherWindow: BrowserWindow,
 ): Promise<void> {
-  // 1. Hide both windows so they don't appear in the screenshot
+  // 1. Hide both windows
   launcherWindow.hide();
   overlayWindow.hide();
 
-  // 2. Let the OS re-composite the desktop without our windows
-  await new Promise((r) => setTimeout(r, 300));
+  // 2. Let OS compositor re-render the desktop without our windows
+  await new Promise((r) => setTimeout(r, 350));
 
   // 3. Take the clean screenshot
   const image = await captureFullScreen();
+  console.log('[Glimpse] Screenshot taken, length:', image.length);
 
-  // 4. Show overlay window — it starts rendering now
+  // 4. Show overlay — renderer will start mounting now
   overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1);
   overlayWindow.show();
   overlayWindow.focus();
 
-  // 5. Wait for the renderer to signal it has mounted + registered IPC listeners.
-  //    Timeout after 3s as safety fallback.
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(resolve, 3000);
-    ipcMain.once('renderer-ready', () => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
+  // 5. Poll for renderer-ready flag (set via IPC by Overlay.tsx useEffect)
+  //    Timeout after 5s as safety net
+  const deadline = Date.now() + 5000;
+  while (!overlayRendererReady && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  if (!overlayRendererReady) {
+    console.warn('[Glimpse] Renderer-ready timeout — sending anyway');
+  } else {
+    console.log('[Glimpse] Renderer ready, sending image');
+  }
 
-  // 6. Now it's safe to send — listener is guaranteed to be registered
+  // 6. Send screenshot
   overlayWindow.webContents.send('reset-overlay');
   await new Promise((r) => setTimeout(r, 30));
   overlayWindow.webContents.send('send-capture-image', image);
