@@ -1,43 +1,48 @@
 /**
  * @file preload.ts
  * Compiled as CommonJS via tsconfig.preload.json.
- * Uses require() — NOT import — so Electron can load it.
  */
 
 const { contextBridge, ipcRenderer } = require('electron');
 
 console.log('[Preload] executing');
 
-function listen(channel: string, cb: (...args: any[]) => void): () => void {
-  const handler = (_e: any, ...args: any[]) => cb(...args);
+function listen(channel, cb) {
+  const handler = (_e, ...args) => cb(...args);
   ipcRenderer.on(channel, handler);
   return () => ipcRenderer.removeListener(channel, handler);
 }
 
 const api = {
-  onCaptureImage: (cb: (dataUrl: string) => void) => {
+  onCaptureImage: (cb) => {
     console.log('[Preload] registering send-capture-image listener');
     ipcRenderer.removeAllListeners('send-capture-image');
-    return listen('send-capture-image', (img: string) => {
+    return listen('send-capture-image', (img) => {
       console.log('[Preload] send-capture-image received, length:', img.length);
       cb(img);
     });
   },
-  onResetOverlay: (cb: () => void) => {
+  onResetOverlay: (cb) => {
     ipcRenderer.removeAllListeners('reset-overlay');
     return listen('reset-overlay', () => {
       console.log('[Preload] reset-overlay received');
       cb();
     });
   },
-  startCapture:    () => { console.log('[Preload] startCapture'); ipcRenderer.send('start-capture'); },
+  // NEW: overlay listens for 'fullscreen-mode' to skip Phase A
+  onFullscreenMode: (cb) => {
+    ipcRenderer.removeAllListeners('fullscreen-mode');
+    return listen('fullscreen-mode', cb);
+  },
+  // startCapture now accepts captureType: 'region' | 'fullscreen'
+  startCapture:    (type) => { console.log('[Preload] startCapture', type); ipcRenderer.send('start-capture', type); },
   rendererReady:   () => { console.log('[Preload] rendererReady'); ipcRenderer.send('renderer-ready'); },
-  saveImage:       (dataUrl: string, filename: string) => ipcRenderer.invoke('save-image', dataUrl, filename),
-  copyToClipboard: (dataUrl: string) => ipcRenderer.invoke('copy-to-clipboard', dataUrl),
+  saveImage:       (dataUrl, filename) => ipcRenderer.invoke('save-image', dataUrl, filename),
+  copyToClipboard: (dataUrl) => ipcRenderer.invoke('copy-to-clipboard', dataUrl),
   closeOverlay:    () => { console.log('[Preload] closeOverlay'); ipcRenderer.send('close-overlay'); },
   retakeCapture:   () => { console.log('[Preload] retakeCapture'); ipcRenderer.send('retake-capture'); },
   getSettings:     () => ipcRenderer.invoke('get-settings'),
-  saveSettings:    (s: any)  => ipcRenderer.invoke('save-settings', s),
+  saveSettings:    (s) => ipcRenderer.invoke('save-settings', s),
 };
 
 try {

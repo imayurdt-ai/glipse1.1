@@ -1,14 +1,8 @@
 /**
  * @file capture.ts
- * Screen capture pipeline.
- *
- * Safe order:
- *   1. Hide both windows (so they don't appear in screenshot)
- *   2. Wait 350ms for OS compositor to clear them
- *   3. Take screenshot
- *   4. Show overlay window
- *   5. Poll until overlayRendererReady flag is set (renderer called renderer-ready)
- *   6. Send screenshot to renderer
+ * Two capture modes:
+ *   region     — show overlay in Phase A (crosshair selection)
+ *   fullscreen — use full display bounds, skip Phase A, go straight to FAB
  */
 
 import { BrowserWindow, desktopCapturer, screen } from 'electron';
@@ -32,37 +26,45 @@ export async function captureFullScreen(): Promise<string> {
 export async function captureWithOverlay(
   overlayWindow: BrowserWindow,
   launcherWindow: BrowserWindow,
+  captureType: 'region' | 'fullscreen' = 'region',
 ): Promise<void> {
   // 1. Hide both windows
   launcherWindow.hide();
   overlayWindow.hide();
 
-  // 2. Let OS compositor re-render the desktop without our windows
+  // 2. Wait for OS compositor
   await new Promise((r) => setTimeout(r, 350));
 
-  // 3. Take the clean screenshot
+  // 3. Take screenshot
   const image = await captureFullScreen();
-  console.log('[Glimpse] Screenshot taken, length:', image.length);
+  console.log('[Glimpse] Screenshot taken, length:', image.length, '| mode:', captureType);
 
-  // 4. Show overlay — renderer will start mounting now
+  // 4. Show overlay
   overlayWindow.setAlwaysOnTop(true, 'screen-saver', 1);
   overlayWindow.show();
   overlayWindow.focus();
 
-  // 5. Poll for renderer-ready flag (set via IPC by Overlay.tsx useEffect)
-  //    Timeout after 5s as safety net
+  // 5. Wait for renderer-ready
   const deadline = Date.now() + 5000;
   while (!overlayRendererReady && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 50));
   }
-  if (!overlayRendererReady) {
-    console.warn('[Glimpse] Renderer-ready timeout — sending anyway');
-  } else {
-    console.log('[Glimpse] Renderer ready, sending image');
-  }
+  if (!overlayRendererReady) console.warn('[Glimpse] renderer-ready timeout — sending anyway');
+  else console.log('[Glimpse] Renderer ready, sending image');
 
-  // 6. Send screenshot
-  overlayWindow.webContents.send('reset-overlay');
-  await new Promise((r) => setTimeout(r, 30));
-  overlayWindow.webContents.send('send-capture-image', image);
+  // 6. For fullscreen: signal overlay to skip selection and use full display bounds
+  if (captureType === 'fullscreen') {
+    const { width, height } = screen.getPrimaryDisplay().bounds;
+    overlayWindow.webContents.send('reset-overlay');
+    await new Promise((r) => setTimeout(r, 30));
+    // Send fullscreen-mode BEFORE the image so overlay sets up the rect first
+    overlayWindow.webContents.send('fullscreen-mode', { width, height });
+    await new Promise((r) => setTimeout(r, 30));
+    overlayWindow.webContents.send('send-capture-image', image);
+  } else {
+    // Region mode: normal flow, user selects area
+    overlayWindow.webContents.send('reset-overlay');
+    await new Promise((r) => setTimeout(r, 30));
+    overlayWindow.webContents.send('send-capture-image', image);
+  }
 }

@@ -1,6 +1,5 @@
 /**
  * @file main.ts
- * Glimpse — Electron main process.
  */
 
 import {
@@ -37,8 +36,6 @@ function windowUrl(name: 'launcher' | 'overlay'): string {
   return url;
 }
 
-// Preload is compiled as CJS so it must use the .cjs extension
-// to avoid Node treating it as ESM (because package.json has "type":"module")
 const preloadPath = path.join(__dirname, 'preload.cjs');
 
 export function safeHideOverlay(): void {
@@ -64,23 +61,18 @@ function createLauncherWindow(): BrowserWindow {
     resizable: false, maximizable: false,
     frame: false, show: true,
     backgroundColor: '#1C1C1E',
-    webPreferences: {
-      preload: preloadPath,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
+    webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
   void win.loadURL(windowUrl('launcher'));
   win.webContents.on('did-finish-load', () => console.log('[Main] Launcher did-finish-load'));
-  win.webContents.on('did-fail-load',   (_e, code, desc) => console.error(`[Main] Launcher FAILED: ${code} ${desc}`));
-  win.webContents.on('console-message', (_e, _lvl, msg, line, src) => console.log(`[Launcher-Renderer] ${msg}  (${src}:${line})`));
+  win.webContents.on('did-fail-load',   (_e, c, d) => console.error(`[Main] Launcher FAILED: ${c} ${d}`));
+  win.webContents.on('console-message', (_e, _l, msg, line, src) => console.log(`[Launcher-Renderer] ${msg}  (${src}:${line})`));
   return win;
 }
 
 function createOverlayWindow(): BrowserWindow {
   const { width, height } = screen.getPrimaryDisplay().bounds;
-  console.log(`[Main] Creating overlay window ${width}x${height}, preload: ${preloadPath}`);
+  console.log(`[Main] Creating overlay ${width}x${height}, preload: ${preloadPath}`);
   const win = new BrowserWindow({
     width, height, x: 0, y: 0,
     transparent: true, frame: false,
@@ -90,27 +82,22 @@ function createOverlayWindow(): BrowserWindow {
     minimizable: false, maximizable: false,
     fullscreenable: false, hasShadow: false,
     backgroundColor: '#00000000',
-    webPreferences: {
-      preload: preloadPath,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
+    webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
   void win.loadURL(windowUrl('overlay'));
-  win.webContents.on('did-finish-load',      () => console.log('[Main] Overlay did-finish-load'));
-  win.webContents.on('did-fail-load',        (_e, code, desc) => console.error(`[Main] Overlay FAILED: ${code} ${desc}`));
-  win.webContents.on('console-message',      (_e, _lvl, msg, line, src) => console.log(`[Overlay-Renderer] ${msg}  (${src}:${line})`));
-  win.webContents.on('render-process-gone',  (_e, details) => { console.error('[Main] Overlay render-process-gone:', details); safeHideOverlay(); });
+  win.webContents.on('did-finish-load',     () => console.log('[Main] Overlay did-finish-load'));
+  win.webContents.on('did-fail-load',       (_e, c, d) => console.error(`[Main] Overlay FAILED: ${c} ${d}`));
+  win.webContents.on('console-message',     (_e, _l, msg, line, src) => console.log(`[Overlay-Renderer] ${msg}  (${src}:${line})`));
+  win.webContents.on('render-process-gone', (_e, details) => { console.error('[Main] Overlay crash:', details); safeHideOverlay(); });
   return win;
 }
 
-export async function triggerCapture(): Promise<void> {
-  console.log('[Main] triggerCapture called');
+export async function triggerCapture(captureType: string = 'region'): Promise<void> {
+  console.log('[Main] triggerCapture called, type:', captureType);
   if (!overlayWindow || !launcherWindow) { console.error('[Main] windows not ready'); return; }
   if (overlayDismissTimer) { clearTimeout(overlayDismissTimer); overlayDismissTimer = null; }
   try {
-    await captureWithOverlay(overlayWindow, launcherWindow);
+    await captureWithOverlay(overlayWindow, launcherWindow, captureType as 'region' | 'fullscreen');
     overlayDismissTimer = setTimeout(() => safeHideOverlay(), 30_000);
   } catch (err) {
     console.error('[Main] Capture error:', err);
@@ -123,10 +110,11 @@ function createTray(): Tray {
   const t    = new Tray(icon);
   t.setToolTip('Glimpse');
   t.setContextMenu(Menu.buildFromTemplate([
-    { label: 'New Capture', click: () => void triggerCapture() },
-    { label: 'Show',        click: () => launcherWindow?.show() },
+    { label: 'New Capture (Region)',     click: () => void triggerCapture('region') },
+    { label: 'New Capture (Fullscreen)', click: () => void triggerCapture('fullscreen') },
+    { label: 'Show Launcher',            click: () => launcherWindow?.show() },
     { type: 'separator' },
-    { label: 'Quit',        click: () => app.quit() },
+    { label: 'Quit', click: () => app.quit() },
   ]));
   t.on('click', () => launcherWindow?.show());
   return t;
@@ -145,8 +133,8 @@ async function bootstrap(): Promise<void> {
     safeHideOverlay,
     setOverlayRendererReady,
   });
-  const ok = globalShortcut.register('CommandOrControl+Shift+5', () => void triggerCapture());
-  console.log('[Main] Shortcut Ctrl+Shift+5 registered:', ok);
+  const ok = globalShortcut.register('CommandOrControl+Shift+5', () => void triggerCapture('region'));
+  console.log('[Main] Shortcut registered:', ok);
 }
 
 app.whenReady().then(() => void bootstrap());
