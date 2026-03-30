@@ -27,38 +27,30 @@ function windowUrl(name: 'launcher' | 'overlay'): string {
   return `file://${path.join(__dirname, '../dist/index.html')}?window=${name}`;
 }
 
-// ── Safety: force-hide overlay ────────────────────────────────────────────────
-// Called any time we need to guarantee the overlay is gone.
 export function safeHideOverlay(): void {
-  if (overlayDismissTimer) {
-    clearTimeout(overlayDismissTimer);
-    overlayDismissTimer = null;
-  }
+  if (overlayDismissTimer) { clearTimeout(overlayDismissTimer); overlayDismissTimer = null; }
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.hide();
     overlayWindow.setAlwaysOnTop(false);
-    // Reset renderer state
-    if (!overlayWindow.webContents.isDestroyed()) {
-      overlayWindow.webContents.send('reset-overlay');
-    }
+    if (!overlayWindow.webContents.isDestroyed()) overlayWindow.webContents.send('reset-overlay');
   }
-  if (launcherWindow && !launcherWindow.isDestroyed()) {
-    launcherWindow.show();
-  }
+  if (launcherWindow && !launcherWindow.isDestroyed()) launcherWindow.show();
 }
 
 function createLauncherWindow(): BrowserWindow {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  const WIN_W = 320;
+  const WIN_H = 360; // tall enough for both capture options + all controls
   const win = new BrowserWindow({
-    width: 320,
-    height: 300,
-    x: Math.round(width / 2 - 160),
-    y: Math.round(height / 2 - 150),
+    width: WIN_W,
+    height: WIN_H,
+    x: Math.round(width / 2 - WIN_W / 2),
+    y: Math.round(height / 2 - WIN_H / 2),
     resizable: false,
     maximizable: false,
     frame: false,
     show: true,
-    backgroundColor: '#111111',
+    backgroundColor: '#1C1C1E',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -68,10 +60,7 @@ function createLauncherWindow(): BrowserWindow {
   });
   void win.loadURL(windowUrl('launcher'));
   win.on('close', (e) => {
-    if (!isQuitting) {
-      e.preventDefault();
-      win.hide();
-    }
+    if (!isQuitting) { e.preventDefault(); win.hide(); }
   });
   return win;
 }
@@ -79,12 +68,7 @@ function createLauncherWindow(): BrowserWindow {
 function createOverlayWindow(): BrowserWindow {
   const { width, height } = screen.getPrimaryDisplay().bounds;
   const win = new BrowserWindow({
-    // Use explicit size instead of fullscreen:true to avoid
-    // Windows fullscreen black-screen bug
-    width,
-    height,
-    x: 0,
-    y: 0,
+    width, height, x: 0, y: 0,
     transparent: true,
     frame: false,
     show: false,
@@ -106,35 +90,17 @@ function createOverlayWindow(): BrowserWindow {
     },
   });
   void win.loadURL(windowUrl('overlay'));
-
-  // SAFETY: If renderer crashes, immediately hide the overlay
-  win.webContents.on('render-process-gone', () => {
-    safeHideOverlay();
-  });
-
-  win.webContents.on('unresponsive', () => {
-    safeHideOverlay();
-  });
-
+  win.webContents.on('render-process-gone', () => safeHideOverlay());
+  win.webContents.on('unresponsive', () => safeHideOverlay());
   return win;
 }
 
 async function triggerCapture(): Promise<void> {
   if (!overlayWindow || !launcherWindow) return;
-  if (overlayWindow.isVisible()) {
-    // Already open — safe-hide and restart
-    safeHideOverlay();
-    await new Promise((r) => setTimeout(r, 200));
-  }
-
+  if (overlayWindow.isVisible()) { safeHideOverlay(); await new Promise((r) => setTimeout(r, 200)); }
   try {
     await captureWithOverlay(overlayWindow, launcherWindow);
-
-    // SAFETY: Hard 30-second auto-dismiss timeout.
-    // If the user does nothing (app frozen), overlay vanishes automatically.
-    overlayDismissTimer = setTimeout(() => {
-      safeHideOverlay();
-    }, 30_000);
+    overlayDismissTimer = setTimeout(() => safeHideOverlay(), 30_000);
   } catch (err) {
     console.error('[Glimpse] Capture failed:', err);
     safeHideOverlay();
@@ -145,7 +111,7 @@ function createTray(): Tray {
   const icon = nativeImage.createEmpty();
   const t = new Tray(icon);
   const menu = Menu.buildFromTemplate([
-    { label: 'New Capture', accelerator: 'CmdOrCtrl+Shift+5', click: () => void triggerCapture() },
+    { label: 'New Capture', click: () => void triggerCapture() },
     { label: 'Settings', click: () => launcherWindow?.show() },
     { type: 'separator' },
     { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
@@ -160,31 +126,16 @@ async function bootstrap(): Promise<void> {
   launcherWindow = createLauncherWindow();
   overlayWindow = createOverlayWindow();
   tray = createTray();
-
-  registerIpcHandlers({
-    getLauncherWindow: () => launcherWindow,
-    getOverlayWindow: () => overlayWindow,
-    triggerCapture,
-    safeHideOverlay,
-  });
-
-  // Register shortcut — wrap in try/catch so a conflict doesn't crash app
-  const registered = globalShortcut.register('CommandOrControl+Shift+5', () => {
-    void triggerCapture();
-  });
-  if (!registered) {
-    console.warn('[Glimpse] Global shortcut CmdOrCtrl+Shift+5 could not be registered.');
-  }
+  registerIpcHandlers({ getLauncherWindow: () => launcherWindow, getOverlayWindow: () => overlayWindow, triggerCapture, safeHideOverlay });
+  const ok = globalShortcut.register('CommandOrControl+Shift+5', () => void triggerCapture());
+  if (!ok) console.warn('[Glimpse] Shortcut CmdOrCtrl+Shift+5 could not be registered.');
 }
 
 app.whenReady().then(() => void bootstrap());
-
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) void bootstrap();
   else launcherWindow?.show();
 });
-
 app.on('before-quit', () => { isQuitting = true; });
 app.on('will-quit', () => globalShortcut.unregisterAll());
-// Prevent accidental full quit when all windows are hidden (lives in tray)
 app.on('window-all-closed', (e: Event) => e.preventDefault());
