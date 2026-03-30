@@ -1,21 +1,12 @@
 /**
  * @file preload.ts
- * Compiled as CommonJS (tsconfig.preload.json) so Electron can require() it.
- * Bridges IPC between renderer and main via contextBridge.
+ * Compiled as CommonJS via tsconfig.preload.json.
+ * Uses require() — NOT import — so Electron can load it.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { contextBridge, ipcRenderer } = require('electron');
 
 console.log('[Preload] executing');
-
-type Tool = 'pen' | 'square' | 'circle' | 'arrow' | 'text';
-
-interface AppSettings {
-  defaultTool: Tool;
-  defaultColor: string;
-  defaultWeight: 2 | 4 | 8;
-}
 
 function listen(channel: string, cb: (...args: any[]) => void): () => void {
   const handler = (_e: any, ...args: any[]) => cb(...args);
@@ -46,7 +37,7 @@ const api = {
   closeOverlay:    () => { console.log('[Preload] closeOverlay'); ipcRenderer.send('close-overlay'); },
   retakeCapture:   () => { console.log('[Preload] retakeCapture'); ipcRenderer.send('retake-capture'); },
   getSettings:     () => ipcRenderer.invoke('get-settings'),
-  saveSettings:    (s: AppSettings) => ipcRenderer.invoke('save-settings', s),
+  saveSettings:    (s: any)  => ipcRenderer.invoke('save-settings', s),
 };
 
 try {

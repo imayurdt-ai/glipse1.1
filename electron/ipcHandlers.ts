@@ -6,14 +6,14 @@ import { app, clipboard, dialog, ipcMain, nativeImage, BrowserWindow } from 'ele
 import fs   from 'node:fs/promises';
 import path from 'node:path';
 import Store from 'electron-store';
-import type { AppSettings } from './preload.js';
+import type { AppSettings } from './types.js';
 
 interface Deps {
-  getLauncherWindow:      () => BrowserWindow | null;
-  getOverlayWindow:       () => BrowserWindow | null;
-  triggerCapture:         () => Promise<void>;
-  safeHideOverlay:        () => void;
-  setOverlayRendererReady:(v: boolean) => void;
+  getLauncherWindow:       () => BrowserWindow | null;
+  getOverlayWindow:        () => BrowserWindow | null;
+  triggerCapture:          () => Promise<void>;
+  safeHideOverlay:         () => void;
+  setOverlayRendererReady: (v: boolean) => void;
 }
 
 const store = new Store<AppSettings>({
@@ -23,29 +23,28 @@ const store = new Store<AppSettings>({
 
 export function registerIpcHandlers(deps: Deps): void {
 
-  // Overlay renderer signals it is mounted and ready to receive the image
   ipcMain.on('renderer-ready', () => {
-    console.log('[Glimpse] renderer-ready received');
+    console.log('[IPC] renderer-ready received');
     deps.setOverlayRendererReady(true);
   });
 
-  // Fresh capture — from launcher button or global shortcut
   ipcMain.on('start-capture', () => {
-    console.log('[Glimpse] start-capture received');
+    console.log('[IPC] start-capture received');
     void deps.triggerCapture();
   });
 
-  // Retake — from FloatingActionBar
   ipcMain.on('retake-capture', async () => {
-    deps.safeHideOverlay(); // also resets overlayRendererReady
+    console.log('[IPC] retake-capture received');
+    deps.safeHideOverlay();
     await new Promise((r) => setTimeout(r, 300));
     void deps.triggerCapture();
   });
 
-  // ESC / close overlay
-  ipcMain.on('close-overlay', () => deps.safeHideOverlay());
+  ipcMain.on('close-overlay', () => {
+    console.log('[IPC] close-overlay received');
+    deps.safeHideOverlay();
+  });
 
-  // Save image to disk
   ipcMain.handle('save-image', async (_e, dataUrl: string, filename: string) => {
     const defaultPath = path.join(app.getPath('pictures'), filename);
     const result = await dialog.showSaveDialog({
