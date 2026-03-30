@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "dev:electron": "concurrently \"vite\" \"wait-on http://localhost:5173 && npm run compile:electron && electron . --inspect\"",
-    "compile:electron": "tsc -p electron/tsconfig.preload.json --outExtension .js:.cjs && tsc -p electron/tsconfig.json",
+    "compile:electron": "tsc -p electron/tsconfig.preload.json && node scripts/rename-preload.cjs && tsc -p electron/tsconfig.json",
     "build": "vite build && npm run compile:electron",
     "preview": "vite preview"
   },
