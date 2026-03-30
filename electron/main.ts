@@ -15,7 +15,6 @@ const __dirname = path.dirname(__filename);
 let launcherWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
-let isQuitting = false;
 let overlayDismissTimer: ReturnType<typeof setTimeout> | null = null;
 
 const isDev = !app.isPackaged;
@@ -58,7 +57,6 @@ function createLauncherWindow(): BrowserWindow {
     },
   });
   void win.loadURL(windowUrl('launcher'));
-  // No close interception — allow normal OS close / app.quit() to work
   return win;
 }
 
@@ -111,7 +109,7 @@ function createTray(): Tray {
     { label: 'New Capture', click: () => void triggerCapture() },
     { label: 'Show', click: () => launcherWindow?.show() },
     { type: 'separator' },
-    { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
+    { label: 'Quit', click: () => app.quit() },
   ]);
   t.setToolTip('Glimpse');
   t.setContextMenu(menu);
@@ -123,7 +121,12 @@ async function bootstrap(): Promise<void> {
   launcherWindow = createLauncherWindow();
   overlayWindow = createOverlayWindow();
   tray = createTray();
-  registerIpcHandlers({ getLauncherWindow: () => launcherWindow, getOverlayWindow: () => overlayWindow, triggerCapture, safeHideOverlay });
+  registerIpcHandlers({
+    getLauncherWindow: () => launcherWindow,
+    getOverlayWindow: () => overlayWindow,
+    triggerCapture,
+    safeHideOverlay,
+  });
   const ok = globalShortcut.register('CommandOrControl+Shift+5', () => void triggerCapture());
   if (!ok) console.warn('[Glimpse] Shortcut CmdOrCtrl+Shift+5 could not be registered.');
 }
@@ -133,9 +136,6 @@ app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) void bootstrap();
   else launcherWindow?.show();
 });
-app.on('before-quit', () => { isQuitting = true; });
 app.on('will-quit', () => globalShortcut.unregisterAll());
-// Now that X quits properly, we can allow window-all-closed to quit on non-mac
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+// Close launcher window = quit the whole app
+app.on('window-all-closed', () => app.quit());

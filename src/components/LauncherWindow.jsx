@@ -2,7 +2,7 @@
  * LauncherWindow.jsx
  * Fills the 320x360 Electron window exactly.
  * Header has -webkit-app-region:drag for window dragging.
- * Buttons use -webkit-app-region:no-drag so clicks still work.
+ * X button calls window.close() directly — works in all modes.
  */
 
 import React, { useState } from 'react';
@@ -10,7 +10,9 @@ import { Settings, X, Camera, Video, Globe, Monitor } from 'lucide-react';
 
 const ipc = {
   startCapture: () => window.electron?.startCapture?.(),
-  hide:         () => window.electron?.hideLauncher?.(),
+  // window.close() is the most direct and reliable way to close
+  // a frameless Electron window — no IPC round-trip needed
+  close: () => window.close(),
 };
 
 export default function LauncherWindow() {
@@ -22,9 +24,7 @@ export default function LauncherWindow() {
       className="w-full h-full bg-[#1C1C1E] flex flex-col"
       style={{ fontFamily: "'Inter', sans-serif" }}
     >
-      {/* ── Header ──
-          app-region:drag  → the whole header is the drag handle
-          Buttons override with no-drag so they remain clickable */}
+      {/* Header — drag region */}
       <div
         className="flex items-center justify-between px-4 py-3 border-b border-[#2A2A2D] flex-shrink-0"
         style={{ WebkitAppRegion: 'drag' }}
@@ -36,7 +36,7 @@ export default function LauncherWindow() {
           <span className="text-[#F9FAFB] text-sm font-semibold tracking-tight">Glimpse</span>
         </div>
 
-        {/* Button group — must opt out of drag region */}
+        {/* Buttons must opt out of drag so clicks register */}
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
           <button
             title="Settings"
@@ -45,16 +45,16 @@ export default function LauncherWindow() {
             <Settings size={15} />
           </button>
           <button
-            title="Hide to tray"
-            onClick={ipc.hide}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-[#9CA3AF] hover:text-[#F9FAFB] hover:bg-[#2A2A2D] transition-colors"
+            title="Close"
+            onClick={ipc.close}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-[#9CA3AF] hover:text-[#EF4444] hover:bg-[#EF4444]/10 transition-colors"
           >
             <X size={15} />
           </button>
         </div>
       </div>
 
-      {/* ── Body ── */}
+      {/* Body */}
       <div className="flex flex-col gap-3 px-4 py-3 flex-1">
 
         {/* Mode Toggle */}
@@ -102,7 +102,7 @@ export default function LauncherWindow() {
         </div>
       </div>
 
-      {/* ── Footer CTA ── */}
+      {/* Footer CTA */}
       <div className="px-4 pb-4 flex-shrink-0">
         <button
           onClick={ipc.startCapture}
