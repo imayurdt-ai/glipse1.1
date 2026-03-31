@@ -1,11 +1,10 @@
 /**
  * @file LauncherWindow.jsx
- * Loads settings from electron-store on mount and seeds:
- *   - default captureType
- *   - Zustand store tool/color/weight via initFromSettings
+ * Hydrates Zustand store from electron-store on mount and on every
+ * settings save (via onSettingsSaved callback from SettingsPage).
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Settings, X, Camera, Video, Globe, Monitor } from 'lucide-react';
 import SettingsPage from './SettingsPage';
 import { useAppStore } from '../store/useAppStore';
@@ -16,19 +15,31 @@ export default function LauncherWindow() {
   const [captureType, setCaptureType] = useState('region');
   const initFromSettings = useAppStore((s) => s.initFromSettings);
 
-  // Hydrate defaults from electron-store on first mount
+  const hydrateStore = useCallback((s) => {
+    if (!s) return;
+    if (s.defaultCaptureType) setCaptureType(s.defaultCaptureType);
+    initFromSettings(s);
+  }, [initFromSettings]);
+
+  // Load on mount
   useEffect(() => {
-    window.electron?.getSettings?.().then((s) => {
-      if (!s) return;
-      if (s.defaultCaptureType) setCaptureType(s.defaultCaptureType);
-      initFromSettings(s);
-    });
-  }, []);
+    window.electron?.getSettings?.().then(hydrateStore);
+  }, [hydrateStore]);
+
+  // Called by SettingsPage every time a setting is saved
+  const handleSettingsSaved = useCallback((latestSettings) => {
+    hydrateStore(latestSettings);
+  }, [hydrateStore]);
 
   const handleCapture = () => window.electron?.startCapture?.(captureType);
 
   if (page === 'settings') {
-    return <SettingsPage onBack={() => setPage('home')} />;
+    return (
+      <SettingsPage
+        onBack={() => setPage('home')}
+        onSettingsSaved={handleSettingsSaved}
+      />
+    );
   }
 
   return (

@@ -68,31 +68,35 @@ export function registerIpcHandlers(deps: Deps): void {
     clipboard.writeImage(nativeImage.createFromDataURL(dataUrl));
   });
 
+  // Returns the full settings object
   ipcMain.handle('get-settings', () => store.store);
 
-  ipcMain.handle('save-settings', (_e, s: AppSettings) => {
-    store.set(s as any);
+  // Patch-merges incoming keys into the existing store
+  // SettingsPage sends only the changed key e.g. { defaultTool: 'pen' }
+  // We must merge, not replace the whole store
+  ipcMain.handle('save-settings', (_e, patch: Partial<AppSettings>) => {
+    const current = store.store;
+    const merged  = { ...current, ...patch };
+    // Write each key individually so electron-store handles it correctly
+    (Object.keys(merged) as (keyof AppSettings)[]).forEach((key) => {
+      store.set(key, merged[key]);
+    });
   });
 
-  // Re-register global shortcut dynamically from settings page
+  // Re-register global shortcut from settings page
   ipcMain.handle('register-shortcut', (_e, accelerator: string) => {
     try {
-      // Unregister all existing Glimpse shortcuts first
       globalShortcut.unregisterAll();
       const ok = globalShortcut.register(accelerator, () => {
         void deps.triggerCapture(store.get('defaultCaptureType') as string ?? 'region');
       });
       if (!ok) {
-        // Re-register old shortcut as fallback
         const old = store.get('shortcut') as string ?? 'CommandOrControl+Shift+5';
         globalShortcut.register(old, () => void deps.triggerCapture('region'));
-        console.warn('[IPC] Shortcut registration failed for:', accelerator);
         return false;
       }
-      console.log('[IPC] Shortcut registered:', accelerator);
       return true;
-    } catch (err) {
-      console.error('[IPC] register-shortcut error:', err);
+    } catch {
       return false;
     }
   });
