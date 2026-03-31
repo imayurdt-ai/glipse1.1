@@ -4,10 +4,9 @@
  * Clicking a tool button:
  *   - If already active → toggles palette open/close
  *   - If not active     → activates tool and opens palette
- * Palette closes when mouse leaves both the button and the palette itself.
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Pen, Square, Circle, ArrowUpRight, Type,
   Undo2, Trash2, RefreshCcw, Save, Copy, Check,
@@ -22,10 +21,11 @@ const COLORS = [
   { id: '#FFFFFF', label: 'White'  },
 ];
 
+// Fixed pixel sizes so the 3 dots are visually clearly small / medium / large
 const WEIGHTS = [
-  { id: 2, size: 2, label: 'Thin'   },
-  { id: 4, size: 4, label: 'Medium' },
-  { id: 8, size: 7, label: 'Thick'  },
+  { id: 2, px: 10, label: 'Thin'   },
+  { id: 4, px: 16, label: 'Medium' },
+  { id: 8, px: 22, label: 'Thick'  },
 ];
 
 const TOOLS = [
@@ -37,10 +37,9 @@ const TOOLS = [
 ];
 
 function Divider() {
-  return <div className="w-px h-5 bg-[#333333] flex-shrink-0" />;
+  return <div className="w-px h-5 bg-[#3A3A3D] flex-shrink-0" />;
 }
 
-// Palette rendered at viewport level, anchored above a tool button
 function ColorPalette({ anchorEl, onClose }) {
   const activeColor  = useAppStore((s) => s.activeColor);
   const activeWeight = useAppStore((s) => s.activeWeight);
@@ -49,14 +48,12 @@ function ColorPalette({ anchorEl, onClose }) {
   const paletteRef   = useRef(null);
   const [pos, setPos] = useState({ left: 0, top: 0 });
 
-  // Position above the anchor button
   useEffect(() => {
     if (!anchorEl) return;
     const r = anchorEl.getBoundingClientRect();
     setPos({ left: r.left + r.width / 2, top: r.top });
   }, [anchorEl]);
 
-  // Close when mouse leaves both palette and the FAB bar
   const handleMouseLeave = (e) => {
     const related = e.relatedTarget;
     if (
@@ -77,55 +74,69 @@ function ColorPalette({ anchorEl, onClose }) {
       }}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Arrow pointer */}
       <div
-        className="flex items-center gap-3 bg-[#1C1C1E] border border-[#2A2A2D] rounded-full px-4 py-2.5"
-        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.6), 0 4px 16px rgba(0,0,0,0.4)' }}
+        className="flex items-center gap-3 bg-[#1C1C1E] border border-[#2A2A2D] rounded-full px-4 py-3"
+        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 4px 16px rgba(0,0,0,0.5)' }}
       >
-        {/* Colors */}
+        {/* ── Color swatches ── */}
         <div className="flex items-center gap-2">
-          {COLORS.map((c) => (
-            <button
-              key={c.id}
-              title={c.label}
-              onClick={() => setColor(c.id)}
-              className="relative w-5 h-5 rounded-full hover:scale-110 transition-transform focus:outline-none"
-              style={{ backgroundColor: c.id }}
-            >
-              {activeColor === c.id && (
-                <span className="absolute inset-0 rounded-full"
-                  style={{ outline: '2px solid #fff', outlineOffset: '2px' }} />
-              )}
-            </button>
-          ))}
+          {COLORS.map((c) => {
+            const isActive = activeColor === c.id;
+            return (
+              <button
+                key={c.id}
+                title={c.label}
+                onClick={() => setColor(c.id)}
+                className="relative flex-shrink-0 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                style={{
+                  width:  24,
+                  height: 24,
+                  backgroundColor: c.id,
+                  // active ring: white border offset from the swatch
+                  boxShadow: isActive
+                    ? `0 0 0 2px #1C1C1E, 0 0 0 4px #ffffff`
+                    : 'none',
+                  transform: isActive ? 'scale(1.15)' : undefined,
+                }}
+              />
+            );
+          })}
         </div>
 
-        <div className="w-px h-4 bg-[#333333]" />
+        {/* divider */}
+        <div className="w-px self-stretch bg-[#3A3A3D]" />
 
-        {/* Weights */}
-        <div className="flex items-center gap-2.5">
-          {WEIGHTS.map((w) => (
-            <button
-              key={w.id}
-              title={w.label}
-              onClick={() => setWeight(w.id)}
-              className="rounded-full hover:scale-110 transition-transform focus:outline-none"
-              style={{
-                width:        w.size * 2 + 8,
-                height:       w.size * 2 + 8,
-                backgroundColor: activeWeight === w.id ? '#F9FAFB' : '#4A4A4D',
-                outline:      activeWeight === w.id ? '2px solid #fff' : 'none',
-                outlineOffset: '2px',
-              }}
-            />
-          ))}
+        {/* ── Weight dots ── */}
+        <div className="flex items-center gap-3">
+          {WEIGHTS.map((w) => {
+            const isActive = activeWeight === w.id;
+            return (
+              <button
+                key={w.id}
+                title={w.label}
+                onClick={() => setWeight(w.id)}
+                className="flex-shrink-0 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                style={{
+                  width:  w.px,
+                  height: w.px,
+                  // selected: bright white fill + white outer ring
+                  // unselected: medium dark grey fill, no ring
+                  backgroundColor: isActive ? '#FFFFFF' : '#555558',
+                  boxShadow: isActive
+                    ? `0 0 0 2px #1C1C1E, 0 0 0 4px #ffffff`
+                    : 'none',
+                }}
+              />
+            );
+          })}
         </div>
       </div>
 
-      {/* Down-caret */}
-      <div className="flex justify-center">
-        <div className="w-2 h-2 bg-[#1C1C1E] border-r border-b border-[#2A2A2D] rotate-45"
-          style={{ marginTop: '-5px' }} />
+      {/* Down caret */}
+      <div className="flex justify-center" style={{ marginTop: -5 }}>
+        <div
+          className="w-2.5 h-2.5 bg-[#1C1C1E] border-r border-b border-[#2A2A2D] rotate-45"
+        />
       </div>
     </div>
   );
@@ -145,53 +156,46 @@ export default function FloatingActionBar() {
   const undo             = useAppStore((s) => s.undo);
   const clearAnnotations = useAppStore((s) => s.clearAnnotations);
 
-  const toolRefs     = useRef({});       // ref map: toolId → DOM button
-  const hoverTimer   = useRef(null);     // delay timer for hover-open
-  const [paletteFor, setPaletteFor] = useState(null); // toolId | null
-  const [copied,  setCopied]  = useState(false);
-  const [saving,  setSaving]  = useState(false);
+  const toolRefs   = useRef({});
+  const hoverTimer = useRef(null);
+  const [paletteFor, setPaletteFor] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const openPalette  = (toolId) => { clearTimeout(hoverTimer.current); setPaletteFor(toolId); };
-  const closePalette = ()       => { clearTimeout(hoverTimer.current); setPaletteFor(null); };
+  const openPalette  = (id) => { clearTimeout(hoverTimer.current); setPaletteFor(id); };
+  const closePalette = ()   => { clearTimeout(hoverTimer.current); setPaletteFor(null); };
 
-  // Hover 400ms → open palette
-  const handleToolMouseEnter = (toolId) => {
+  const handleToolMouseEnter = (id) => {
     clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => openPalette(toolId), 400);
+    hoverTimer.current = setTimeout(() => openPalette(id), 400);
   };
 
-  // Leave button area — close palette only if not entering the palette itself
   const handleToolMouseLeave = (e) => {
     clearTimeout(hoverTimer.current);
-    const related = e.relatedTarget;
-    // If moving into the palette or staying inside data-fab, keep it open
-    if (related?.closest?.('[data-palette]') || related?.closest?.('[data-fab]')) return;
+    const rel = e.relatedTarget;
+    if (rel?.closest?.('[data-palette]') || rel?.closest?.('[data-fab]')) return;
     closePalette();
   };
 
-  // Click: activate tool, toggle palette
-  const handleToolClick = (toolId) => {
+  const handleToolClick = (id) => {
     clearTimeout(hoverTimer.current);
-    if (activeTool === toolId) {
-      setPaletteFor((prev) => prev === toolId ? null : toolId);
+    if (activeTool === id) {
+      setPaletteFor((prev) => prev === id ? null : id);
     } else {
-      setTool(toolId);
-      openPalette(toolId);
+      setTool(id);
+      openPalette(id);
     }
   };
 
-  // Close palette on outside click
   useEffect(() => {
     const handler = (e) => {
-      if (!e.target.closest('[data-fab]') && !e.target.closest('[data-palette]')) {
+      if (!e.target.closest('[data-fab]') && !e.target.closest('[data-palette]'))
         closePalette();
-      }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Cleanup timer on unmount
   useEffect(() => () => clearTimeout(hoverTimer.current), []);
 
   const handleSave = async () => {
@@ -212,7 +216,6 @@ export default function FloatingActionBar() {
 
   return (
     <>
-      {/* Palette rendered outside FAB bar so it can float above freely */}
       {paletteFor && (
         <div data-palette>
           <ColorPalette
@@ -227,7 +230,6 @@ export default function FloatingActionBar() {
         className="flex items-center gap-0.5 bg-[#1C1C1E] border border-[#2A2A2D] rounded-full px-3 py-2"
         style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.65), 0 6px 20px rgba(0,0,0,0.4)' }}
       >
-        {/* Tool buttons */}
         {TOOLS.map(({ id, Icon, label }) => {
           const isActive = activeTool === id;
           return (
@@ -244,8 +246,10 @@ export default function FloatingActionBar() {
             >
               <Icon size={15} style={{ color: isActive ? activeColor : '#9CA3AF' }} />
               {isActive && (
-                <span className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: activeColor }} />
+                <span
+                  className="absolute bottom-1 right-1 w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: activeColor }}
+                />
               )}
             </button>
           );
@@ -271,7 +275,7 @@ export default function FloatingActionBar() {
 
         <button title="Save to Disk" onClick={handleSave} disabled={saving}
           className="flex items-center gap-1.5 h-8 px-3 rounded-full bg-[#F9FAFB] hover:bg-white active:scale-[0.97] text-[#111111] text-xs font-semibold transition-all focus:outline-none disabled:opacity-50">
-          <Save size={12} /> {saving ? 'Saving…' : 'Save'}
+          <Save size={12} />{saving ? 'Saving…' : 'Save'}
         </button>
 
         <button title="Copy to Clipboard" onClick={handleCopy}
