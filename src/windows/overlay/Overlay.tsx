@@ -1,12 +1,5 @@
 /**
  * @file Overlay.tsx
- *
- * Text tool fix:
- *  - HTML <textarea> is rendered OUTSIDE the Konva stage div, at viewport-level z-index
- *  - Position = rect offset + click position inside stage
- *  - Stage pointer-events set to 'none' while text editor is open so clicks
- *    don't get swallowed by the canvas
- *  - onBlur guarded by a flag so it doesn't fire immediately on autoFocus
  */
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -20,18 +13,163 @@ import FloatingActionBar from '../../components/FloatingActionBar';
 import { useAnnotation } from '../../hooks/useAnnotation';
 import { useAppStore, type Annotation } from '../../store/useAppStore';
 
-// ─ Shape ─────────────────────────────────────────────────────────────────
+// ── Colour palette (shown when hovering an existing annotation) ──────────
 
-function Shape({ a }: { a: Annotation }) {
-  const common = { stroke: a.color, strokeWidth: a.weight, listening: false };
-  if (a.tool === 'pen')    return <Line points={a.points ?? []} {...common} lineCap="round" lineJoin="round" />;
-  if (a.tool === 'arrow')  return <Arrow points={a.points ?? []} {...common} fill={a.color} pointerLength={12} pointerWidth={10} />;
-  if (a.tool === 'square') return <Rect x={a.x} y={a.y} width={a.width} height={a.height} {...common} />;
-  if (a.tool === 'circle') return <Circle x={a.x} y={a.y} radius={a.radius} {...common} />;
-  return <Text x={a.x} y={a.y} text={a.text ?? ''} fill={a.color} fontSize={18} fontStyle="bold" listening={false} />;
+const HOVER_COLORS  = [
+  { id: '#EF4444', label: 'Red'    },
+  { id: '#EAB308', label: 'Yellow' },
+  { id: '#22C55E', label: 'Green'  },
+  { id: '#3B82F6', label: 'Blue'   },
+  { id: '#FFFFFF', label: 'White'  },
+];
+const HOVER_WEIGHTS = [
+  { id: 2, px: 10, label: 'Thin'   },
+  { id: 4, px: 16, label: 'Medium' },
+  { id: 8, px: 22, label: 'Thick'  },
+];
+
+interface AnnotationPalette {
+  annotationId: string;
+  screenX: number;   // viewport x – centre of palette
+  screenY: number;   // viewport y – top of palette (it renders upward)
 }
 
-// ─ Crop ──────────────────────────────────────────────────────────────────
+function HoverPalette({
+  info, stageRect,
+}: {
+  info: AnnotationPalette;
+  stageRect: { x: number; y: number; w: number; h: number };
+}) {
+  const activeColor  = useAppStore((s) => s.activeColor);
+  const activeWeight = useAppStore((s) => s.activeWeight);
+  const setColor     = useAppStore((s) => s.setColor);
+  const setWeight    = useAppStore((s) => s.setWeight);
+  const annotations  = useAppStore((s) => s.annotations);
+  const updateAnnotation = useAppStore((s) => s.updateAnnotation);
+
+  // Change the color/weight of the hovered annotation in place
+  const applyColor = (c: string) => {
+    setColor(c);
+    updateAnnotation(info.annotationId, { color: c });
+  };
+  const applyWeight = (w: number) => {
+    setWeight(w as 2 | 4 | 8);
+    updateAnnotation(info.annotationId, { weight: w as 2 | 4 | 8 });
+  };
+
+  // Current values for this specific annotation (for ring display)
+  const ann    = annotations.find((a) => a.id === info.annotationId);
+  const annColor  = ann?.color  ?? activeColor;
+  const annWeight = ann?.weight ?? activeWeight;
+
+  const left = Math.max(80, Math.min(info.screenX, window.innerWidth - 80));
+  const top  = info.screenY - 8;
+
+  return (
+    <div
+      data-hover-palette
+      className="fixed z-[9997] pointer-events-auto"
+      style={{ left, top, transform: 'translateX(-50%) translateY(-100%)' }}
+    >
+      <div
+        className="flex items-center gap-3 bg-[#1C1C1E] border border-[#2A2A2D] rounded-full px-4 py-3"
+        style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 4px 16px rgba(0,0,0,0.5)' }}
+      >
+        {/* Colors */}
+        <div className="flex items-center gap-2">
+          {HOVER_COLORS.map((c) => {
+            const isActive = annColor === c.id;
+            return (
+              <button
+                key={c.id}
+                title={c.label}
+                onClick={() => applyColor(c.id)}
+                className="flex-shrink-0 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                style={{
+                  width: 24, height: 24,
+                  backgroundColor: c.id,
+                  boxShadow: isActive ? '0 0 0 2px #1C1C1E, 0 0 0 4px #fff' : 'none',
+                  transform: isActive ? 'scale(1.15)' : undefined,
+                }}
+              />
+            );
+          })}
+        </div>
+
+        <div className="w-px self-stretch bg-[#3A3A3D]" />
+
+        {/* Weights */}
+        <div className="flex items-center gap-3">
+          {HOVER_WEIGHTS.map((w) => {
+            const isActive = annWeight === w.id;
+            return (
+              <button
+                key={w.id}
+                title={w.label}
+                onClick={() => applyWeight(w.id)}
+                className="flex-shrink-0 rounded-full transition-transform hover:scale-110 focus:outline-none"
+                style={{
+                  width: w.px, height: w.px,
+                  backgroundColor: isActive ? '#FFFFFF' : '#555558',
+                  boxShadow: isActive ? '0 0 0 2px #1C1C1E, 0 0 0 4px #fff' : 'none',
+                }}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Caret */}
+      <div className="flex justify-center" style={{ marginTop: -5 }}>
+        <div className="w-2.5 h-2.5 bg-[#1C1C1E] border-r border-b border-[#2A2A2D] rotate-45" />
+      </div>
+    </div>
+  );
+}
+
+// ── Shape ─────────────────────────────────────────────────────────────────
+
+function Shape({
+  a,
+  onEnter,
+  onLeave,
+  isInProgress,
+}: {
+  a: Annotation;
+  onEnter?: (id: string, x: number, y: number) => void;
+  onLeave?: () => void;
+  isInProgress?: boolean;
+}) {
+  const common = {
+    stroke: a.color,
+    strokeWidth: a.weight,
+    // In-progress shapes never receive mouse events (avoids interfering with drawing)
+    listening: !isInProgress,
+  };
+
+  const handlers = isInProgress ? {} : {
+    onMouseEnter: (e: any) => {
+      const stage = e.target.getStage();
+      const ptr   = stage?.getPointerPosition();
+      if (ptr && onEnter) onEnter(a.id, ptr.x, ptr.y);
+      const container = stage?.container();
+      if (container) container.style.cursor = 'pointer';
+    },
+    onMouseLeave: (e: any) => {
+      onLeave?.();
+      const container = e.target.getStage()?.container();
+      if (container) container.style.cursor = 'crosshair';
+    },
+  };
+
+  if (a.tool === 'pen')    return <Line    points={a.points ?? []}                       {...common} {...handlers} lineCap="round" lineJoin="round" />;
+  if (a.tool === 'arrow')  return <Arrow   points={a.points ?? []}                       {...common} {...handlers} fill={a.color} pointerLength={12} pointerWidth={10} />;
+  if (a.tool === 'square') return <Rect    x={a.x} y={a.y} width={a.width} height={a.height} {...common} {...handlers} />;
+  if (a.tool === 'circle') return <Circle  x={a.x} y={a.y} radius={a.radius}             {...common} {...handlers} />;
+  return <Text x={a.x} y={a.y} text={a.text ?? ''} fill={a.color} fontSize={18} fontStyle="bold" {...handlers} listening={!isInProgress} />;
+}
+
+// ── Crop ──────────────────────────────────────────────────────────────────
 
 function cropImage(src: string, rect: { x: number; y: number; w: number; h: number }): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -49,7 +187,7 @@ function cropImage(src: string, rect: { x: number; y: number; w: number; h: numb
   });
 }
 
-// ─ Phase A ───────────────────────────────────────────────────────────────
+// ── Phase A ───────────────────────────────────────────────────────────────
 
 function SelectionPhase({ sourceImage }: { sourceImage: string }) {
   const setCapturedImage = useAppStore((s) => s.setCapturedImage);
@@ -116,7 +254,7 @@ function SelectionPhase({ sourceImage }: { sourceImage: string }) {
   );
 }
 
-// ─ Phase B ───────────────────────────────────────────────────────────────
+// ── Phase B ───────────────────────────────────────────────────────────────
 
 function AnnotationPhase({
   croppedImage, rect,
@@ -137,10 +275,35 @@ function AnnotationPhase({
     handleStageMouseUp,
   } = useAnnotation();
 
-  const [bgImage]   = useImage(croppedImage);
-  const stageRef    = useRef<Konva.Stage>(null);
-  // Guard: ignore the very first blur that fires right after autoFocus
-  const justOpened  = useRef(false);
+  const [bgImage]  = useImage(croppedImage);
+  const stageRef   = useRef<Konva.Stage>(null);
+  const justOpened = useRef(false);
+
+  // Hover palette state: which annotation + where to show it
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [hoverPalette, setHoverPalette] = useState<AnnotationPalette | null>(null);
+
+  const handleAnnotationEnter = (id: string, canvasX: number, canvasY: number) => {
+    if (leaveTimer.current) { clearTimeout(leaveTimer.current); leaveTimer.current = null; }
+    // Convert canvas coords → viewport coords
+    setHoverPalette({
+      annotationId: id,
+      screenX: rect.x + canvasX,
+      screenY: rect.y + canvasY,
+    });
+  };
+
+  // Small delay before closing so the user can reach the palette
+  const handleAnnotationLeave = () => {
+    leaveTimer.current = setTimeout(() => setHoverPalette(null), 200);
+  };
+
+  // Keep palette open when mouse is inside the HoverPalette div
+  const cancelLeave = () => {
+    if (leaveTimer.current) { clearTimeout(leaveTimer.current); leaveTimer.current = null; }
+  };
+
+  useEffect(() => () => { if (leaveTimer.current) clearTimeout(leaveTimer.current); }, []);
 
   useEffect(() => { setTool('arrow'); }, [setTool]);
 
@@ -149,17 +312,14 @@ function AnnotationPhase({
     return () => { delete (window as any).__glimpseStage; };
   }, [stageRef.current]);
 
-  // When textEditor opens, set the guard so immediate blur is ignored
   useEffect(() => {
     if (textEditor) {
       justOpened.current = true;
-      // Clear guard after one tick
       const t = setTimeout(() => { justOpened.current = false; }, 100);
       return () => clearTimeout(t);
     }
   }, [textEditor?.id]);
 
-  // Viewport-level position for the textarea
   const textareaStyle: React.CSSProperties | undefined = textEditor ? {
     position: 'fixed',
     left:  rect.x + textEditor.x,
@@ -186,10 +346,9 @@ function AnnotationPhase({
   } : undefined;
 
   return (
-    // Outer wrapper — full screen, holds everything
     <div className="fixed inset-0" style={{ background: 'rgba(0,0,0,0.45)' }}>
 
-      {/* Konva stage container — pointer-events disabled while text editor is open */}
+      {/* Konva stage */}
       <div
         className="absolute"
         style={{
@@ -209,9 +368,22 @@ function AnnotationPhase({
         >
           <Layer>
             {bgImage && <KonvaImage image={bgImage} width={rect.w} height={rect.h} />}
-            {annotations.map((a) => <Shape key={a.id} a={a} />)}
-            {currentAnnotation && <Shape a={currentAnnotation} />}
-            {/* Live preview of text being typed on canvas */}
+
+            {/* Committed annotations — listening ON so hover events fire */}
+            {annotations.map((a) => (
+              <Shape
+                key={a.id}
+                a={a}
+                onEnter={handleAnnotationEnter}
+                onLeave={handleAnnotationLeave}
+              />
+            ))}
+
+            {/* In-progress shape — listening OFF to avoid interfering */}
+            {currentAnnotation && (
+              <Shape a={currentAnnotation} isInProgress />
+            )}
+
             {textEditor && textValue.trim() && (
               <Text
                 x={textEditor.x}
@@ -227,11 +399,18 @@ function AnnotationPhase({
         </Stage>
       </div>
 
-      {/*
-        * TEXT INPUT — rendered at viewport level (fixed), OUTSIDE the Konva div.
-        * This is critical: anything inside the Konva container div gets its
-        * pointer events swallowed by the canvas element.
-        */}
+      {/* Hover palette — wraps in a div that keeps it alive while hovered */}
+      {hoverPalette && (
+        <div
+          onMouseEnter={cancelLeave}
+          onMouseLeave={handleAnnotationLeave}
+          style={{ position: 'fixed', top: 0, left: 0, pointerEvents: 'none', zIndex: 9997 }}
+        >
+          <HoverPalette info={hoverPalette} stageRect={rect} />
+        </div>
+      )}
+
+      {/* Floating text editor */}
       {textEditor && textareaStyle && (
         <textarea
           autoFocus
@@ -240,25 +419,15 @@ function AnnotationPhase({
           placeholder="Type and press Enter"
           onChange={(e) => {
             setTextValue(e.target.value);
-            // Auto-grow height
             e.target.style.height = 'auto';
             e.target.style.height = `${e.target.scrollHeight}px`;
           }}
           onKeyDown={(e) => {
             e.stopPropagation();
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              commitText(textValue, textEditor);
-            }
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              commitText('', textEditor); // discard
-            }
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commitText(textValue, textEditor); }
+            if (e.key === 'Escape') { e.preventDefault(); commitText('', textEditor); }
           }}
-          onBlur={() => {
-            if (justOpened.current) return; // ignore immediate blur
-            commitText(textValue, textEditor);
-          }}
+          onBlur={() => { if (justOpened.current) return; commitText(textValue, textEditor); }}
           style={textareaStyle}
         />
       )}
@@ -278,7 +447,7 @@ function AnnotationPhase({
   );
 }
 
-// ─ Root ──────────────────────────────────────────────────────────────────
+// ── Root ──────────────────────────────────────────────────────────────────
 
 export default function Overlay() {
   const sourceImage      = useAppStore((s) => s.sourceImage);
@@ -290,7 +459,7 @@ export default function Overlay() {
   const reset            = useAppStore((s) => s.reset);
 
   useEffect(() => {
-    if (!window.electron) { console.error('[Overlay] window.electron UNDEFINED'); return; }
+    if (!window.electron) return;
     const offCapture    = window.electron.onCaptureImage((img) => { setSourceImage(img); });
     const offReset      = window.electron.onResetOverlay(() => { reset(); });
     const offFullscreen = window.electron.onFullscreenMode(({ width, height }) => {

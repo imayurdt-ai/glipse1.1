@@ -1,11 +1,8 @@
 /**
  * @file useAppStore.ts
  * Global Zustand store for Glimpse.
- *
- * Tool/color/weight defaults are hydrated from electron-store (main process)
- * via the initFromSettings() action called once on app mount.
- * We no longer use zustand/persist to avoid a split-brain between
- * localStorage and electron-store.
+ * Added updateAnnotation action so hovering an annotation and changing
+ * color/weight patches it in-place immediately.
  */
 
 import { create } from 'zustand';
@@ -35,35 +32,31 @@ export interface SelectionRect {
 }
 
 interface AppState {
-  // Capture state
   capturedImage:  string | null;
   sourceImage:    string | null;
   selectionRect:  SelectionRect | null;
   isSelecting:    boolean;
-
-  // Annotation tool state
-  activeTool:       Tool;
-  activeColor:      string;
-  activeWeight:     Weight;
+  activeTool:     Tool;
+  activeColor:    string;
+  activeWeight:   Weight;
   showColorPopover: boolean;
-  annotations:      Annotation[];
+  annotations:    Annotation[];
 
-  // Actions
-  setCapturedImage:   (img: string | null)          => void;
-  setSourceImage:     (img: string | null)          => void;
-  setSelectionRect:   (rect: SelectionRect | null)  => void;
-  setIsSelecting:     (v: boolean)                  => void;
-  setTool:            (t: Tool)                     => void;
-  setColor:           (c: string)                   => void;
-  setWeight:          (w: Weight)                   => void;
-  toggleColorPopover: ()                            => void;
-  setShowColorPopover:(v: boolean)                  => void;
-  addAnnotation:      (a: Annotation)               => void;
-  undo:               ()                            => void;
-  clearAnnotations:   ()                            => void;
-  reset:              ()                            => void;
-  // Hydrate defaults from electron-store settings
-  initFromSettings:   (s: { defaultTool: string; defaultColor: string; defaultWeight: number }) => void;
+  setCapturedImage:    (img: string | null)         => void;
+  setSourceImage:      (img: string | null)         => void;
+  setSelectionRect:    (rect: SelectionRect | null) => void;
+  setIsSelecting:      (v: boolean)                 => void;
+  setTool:             (t: Tool)                    => void;
+  setColor:            (c: string)                  => void;
+  setWeight:           (w: Weight)                  => void;
+  toggleColorPopover:  ()                           => void;
+  setShowColorPopover: (v: boolean)                 => void;
+  addAnnotation:       (a: Annotation)              => void;
+  updateAnnotation:    (id: string, patch: Partial<Annotation>) => void;
+  undo:                ()                           => void;
+  clearAnnotations:    ()                           => void;
+  reset:               ()                           => void;
+  initFromSettings:    (s: { defaultTool: string; defaultColor: string; defaultWeight: number }) => void;
 }
 
 const runtimeDefaults = {
@@ -75,7 +68,7 @@ const runtimeDefaults = {
   annotations:      [],
 };
 
-export const useAppStore = create<AppState>()((set, get) => ({
+export const useAppStore = create<AppState>()((set) => ({
   ...runtimeDefaults,
   activeTool:   'arrow' as Tool,
   activeColor:  '#EF4444',
@@ -91,8 +84,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
   toggleColorPopover:  ()     => set((s) => ({ showColorPopover: !s.showColorPopover })),
   setShowColorPopover: (v)    => set({ showColorPopover: v }),
   addAnnotation:       (a)    => set((s) => ({ annotations: [...s.annotations, a] })),
-  undo:                ()     => set((s) => ({ annotations: s.annotations.slice(0, -1) })),
-  clearAnnotations:    ()     => set({ annotations: [] }),
+
+  // Patch a single committed annotation by id (used by hover palette)
+  updateAnnotation: (id, patch) =>
+    set((s) => ({
+      annotations: s.annotations.map((a) => a.id === id ? { ...a, ...patch } : a),
+    })),
+
+  undo:             () => set((s) => ({ annotations: s.annotations.slice(0, -1) })),
+  clearAnnotations: () => set({ annotations: [] }),
 
   reset: () =>
     set((s) => ({
@@ -102,11 +102,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
       activeWeight: s.activeWeight,
     })),
 
-  // Called once on mount — seeds tool/color/weight from electron-store settings
   initFromSettings: (s) =>
     set({
-      activeTool:   (s.defaultTool   as Tool)   || 'arrow',
-      activeColor:  s.defaultColor               || '#EF4444',
-      activeWeight: (s.defaultWeight as Weight)  || 4,
+      activeTool:   (s.defaultTool   as Tool)  || 'arrow',
+      activeColor:  s.defaultColor              || '#EF4444',
+      activeWeight: (s.defaultWeight as Weight) || 4,
     }),
 }));
