@@ -1,18 +1,23 @@
 /**
- * LauncherWindow.jsx
- * Passes captureType ('region' | 'fullscreen') to IPC on New Capture.
+ * @file LauncherWindow.jsx
+ * page state: 'home' | 'settings'
+ * Settings button navigates in-place — no new window.
  */
 
 import React, { useState } from 'react';
 import { Settings, X, Camera, Video, Globe, Monitor } from 'lucide-react';
+import SettingsPage from './SettingsPage';
 
 export default function LauncherWindow() {
-  const [activeMode, setActiveMode]   = useState('screenshot');
+  const [page,        setPage]        = useState('home');
+  const [activeMode,  setActiveMode]  = useState('screenshot');
   const [captureType, setCaptureType] = useState('region');
 
-  const handleCapture = () => {
-    window.electron?.startCapture?.(captureType);
-  };
+  const handleCapture = () => window.electron?.startCapture?.(captureType);
+
+  if (page === 'settings') {
+    return <SettingsPage onBack={() => setPage('home')} />;
+  }
 
   return (
     <div className="w-full h-full bg-[#1C1C1E] flex flex-col"
@@ -28,7 +33,9 @@ export default function LauncherWindow() {
           <span className="text-[#F9FAFB] text-sm font-semibold tracking-tight">Glimpse</span>
         </div>
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
-          <button title="Settings"
+          <button
+            title="Settings"
+            onClick={() => setPage('settings')}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-[#9CA3AF] hover:text-[#F9FAFB] hover:bg-[#2A2A2D] transition-colors">
             <Settings size={15} />
           </button>
@@ -41,7 +48,6 @@ export default function LauncherWindow() {
 
       {/* Body */}
       <div className="flex flex-col gap-3 px-4 py-3 flex-1">
-        {/* Mode Toggle */}
         <div className="flex items-center bg-[#111111] rounded-xl p-1 gap-1">
           {[['screenshot', Camera, 'Screenshot'], ['recording', Video, 'Recording']].map(([mode, Icon, label]) => (
             <button key={mode} onClick={() => setActiveMode(mode)}
@@ -82,7 +88,7 @@ export default function LauncherWindow() {
         </div>
       </div>
 
-      {/* Footer CTA */}
+      {/* Footer */}
       <div className="px-4 pb-4 flex-shrink-0">
         <button onClick={handleCapture}
           className="w-full bg-[#F9FAFB] hover:bg-white active:scale-[0.98] text-[#111111] font-semibold text-sm py-3 rounded-xl transition-all flex items-center justify-center gap-2">
