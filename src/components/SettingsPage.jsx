@@ -1,8 +1,7 @@
 /**
  * @file SettingsPage.jsx
- * Settings UI. Each change auto-saves a patch to electron-store via IPC.
- * On back navigation, LauncherWindow re-calls getSettings + initFromSettings
- * so the FAB immediately reflects new defaults.
+ * Annotation Defaults section removed.
+ * Sections: Capture, Save Defaults, Keyboard Shortcut, App.
  */
 
 import React, { useEffect, useState, useRef } from 'react';
@@ -10,10 +9,6 @@ import {
   ArrowLeft, Monitor, Palette,
   Keyboard, Save, RotateCcw, Globe,
 } from 'lucide-react';
-
-const TOOLS   = ['arrow', 'pen', 'square', 'circle', 'text'];
-const COLORS  = ['#EF4444','#F97316','#EAB308','#22C55E','#3B82F6','#A855F7','#FFFFFF','#000000'];
-const WEIGHTS = [2, 4, 6, 8, 10];
 
 function eventToAccelerator(e) {
   const parts = [];
@@ -45,9 +40,6 @@ export default function SettingsPage({ onBack, onSettingsSaved }) {
     window.electron?.getSettings?.().then((s) => {
       setSettings({
         defaultCaptureType: 'region',
-        defaultTool:        'arrow',
-        defaultColor:       '#EF4444',
-        defaultWeight:      4,
         filenameFormat:     'glimpse-{date}-{time}',
         launchAtStartup:    false,
         showInTray:         true,
@@ -57,14 +49,12 @@ export default function SettingsPage({ onBack, onSettingsSaved }) {
     });
   }, []);
 
-  // Save a patch — only the changed key(s) are sent
   const save = async (patch) => {
     const next = { ...settings, ...patch };
     setSettings(next);
     await window.electron?.saveSettings?.(patch);
     setSaveStatus('Saved');
     setTimeout(() => setSaveStatus(''), 1200);
-    // Notify launcher to re-hydrate Zustand store immediately
     onSettingsSaved?.(next);
   };
 
@@ -120,9 +110,7 @@ export default function SettingsPage({ onBack, onSettingsSaved }) {
           <span className="text-[#F9FAFB] text-sm font-semibold tracking-tight">Settings</span>
         </div>
         {saveStatus && (
-          <span className="text-[#22C55E] text-xs font-medium" style={{ WebkitAppRegion: 'no-drag' }}>
-            ✓ {saveStatus}
-          </span>
+          <span className="text-[#22C55E] text-xs font-medium" style={{ WebkitAppRegion: 'no-drag' }}>✓ {saveStatus}</span>
         )}
       </div>
 
@@ -135,45 +123,8 @@ export default function SettingsPage({ onBack, onSettingsSaved }) {
           <Label>Default mode</Label>
           <div className="flex gap-2">
             {['region','fullscreen'].map((v) => (
-              <Chip key={v} active={settings.defaultCaptureType === v}
-                onClick={() => save({ defaultCaptureType: v })}>
+              <Chip key={v} active={settings.defaultCaptureType === v} onClick={() => save({ defaultCaptureType: v })}>
                 {v === 'region' ? '▣ Region' : '⛶ Full Screen'}
-              </Chip>
-            ))}
-          </div>
-        </Section>
-
-        {/* Annotation */}
-        <Section icon={<Palette size={13} />} title="Annotation Defaults">
-          <Label>Default tool</Label>
-          <div className="flex gap-1.5 flex-wrap">
-            {TOOLS.map((t) => (
-              <Chip key={t} active={settings.defaultTool === t}
-                onClick={() => save({ defaultTool: t })}>
-                {t.charAt(0).toUpperCase() + t.slice(1)}
-              </Chip>
-            ))}
-          </div>
-
-          <Label className="mt-2">Default color</Label>
-          <div className="flex gap-1.5 flex-wrap">
-            {COLORS.map((c) => (
-              <button key={c} onClick={() => save({ defaultColor: c })}
-                className="w-6 h-6 rounded-full border-2 transition-all flex-shrink-0"
-                style={{
-                  background: c,
-                  borderColor: settings.defaultColor === c ? '#fff' : 'transparent',
-                  boxShadow:   settings.defaultColor === c ? `0 0 0 1px ${c}` : 'none',
-                }} />
-            ))}
-          </div>
-
-          <Label className="mt-2">Stroke weight</Label>
-          <div className="flex gap-1.5">
-            {WEIGHTS.map((w) => (
-              <Chip key={w} active={settings.defaultWeight === w}
-                onClick={() => save({ defaultWeight: w })}>
-                {w}px
               </Chip>
             ))}
           </div>
@@ -185,9 +136,9 @@ export default function SettingsPage({ onBack, onSettingsSaved }) {
           <input
             value={settings.filenameFormat}
             onChange={(e) => save({ filenameFormat: e.target.value })}
-            className="w-full bg-[#111111] border border-[#2A2A2D] rounded-lg px-3 py-1.5 text-[#F9FAFB] text-xs font-mono outline-none focus:border-[#3B82F6]"
+            className="w-full bg-[#1C1C1E] border border-[#2A2A2D] rounded-lg px-3 py-1.5 text-[#F9FAFB] text-xs font-mono outline-none focus:border-[#3B82F6]"
           />
-          <p className="text-[#6B7280] text-[10px] mt-1">
+          <p className="text-[#6B7280] text-[10px] mt-0.5">
             Preview: <span className="text-[#9CA3AF]">{filenamePreview(settings.filenameFormat)}</span>
           </p>
         </Section>
@@ -203,10 +154,7 @@ export default function SettingsPage({ onBack, onSettingsSaved }) {
               <button onClick={startRecording} className="text-[#3B82F6] text-xs hover:underline">Edit</button>
               {settings.shortcut !== 'CommandOrControl+Shift+5' && (
                 <button
-                  onClick={() => {
-                    save({ shortcut: 'CommandOrControl+Shift+5' });
-                    window.electron?.registerShortcut?.('CommandOrControl+Shift+5');
-                  }}
+                  onClick={() => { save({ shortcut: 'CommandOrControl+Shift+5' }); window.electron?.registerShortcut?.('CommandOrControl+Shift+5'); }}
                   className="text-[#6B7280] text-xs hover:text-[#9CA3AF] flex items-center gap-1">
                   <RotateCcw size={10} /> Reset
                 </button>
@@ -236,8 +184,8 @@ export default function SettingsPage({ onBack, onSettingsSaved }) {
 
         {/* App */}
         <Section icon={<Globe size={13} />} title="App">
-          <Toggle label="Show in system tray"  checked={settings.showInTray}       onChange={(v) => save({ showInTray: v })} />
-          <Toggle label="Launch at startup"    checked={settings.launchAtStartup}  onChange={(v) => save({ launchAtStartup: v })} />
+          <Toggle label="Show in system tray" checked={settings.showInTray}      onChange={(v) => save({ showInTray: v })} />
+          <Toggle label="Launch at startup"   checked={settings.launchAtStartup} onChange={(v) => save({ launchAtStartup: v })} />
         </Section>
 
       </div>
@@ -281,12 +229,8 @@ function Toggle({ label, checked, onChange }) {
     <div className="flex items-center justify-between py-0.5">
       <span className="text-[#F9FAFB] text-xs">{label}</span>
       <button onClick={() => onChange(!checked)}
-        className={`relative w-8 h-4 rounded-full transition-colors ${
-          checked ? 'bg-[#3B82F6]' : 'bg-[#3A3A3D]'
-        }`}>
-        <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${
-          checked ? 'left-[18px]' : 'left-0.5'
-        }`} />
+        className={`relative w-8 h-4 rounded-full transition-colors ${checked ? 'bg-[#3B82F6]' : 'bg-[#3A3A3D]'}`}>
+        <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${checked ? 'left-[18px]' : 'left-0.5'}`} />
       </button>
     </div>
   );
