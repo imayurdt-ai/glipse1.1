@@ -1,8 +1,15 @@
 /**
  * @file Overlay.tsx
+ *
+ * Text tool fix:
+ *  - HTML <textarea> is rendered OUTSIDE the Konva stage div, at viewport-level z-index
+ *  - Position = rect offset + click position inside stage
+ *  - Stage pointer-events set to 'none' while text editor is open so clicks
+ *    don't get swallowed by the canvas
+ *  - onBlur guarded by a flag so it doesn't fire immediately on autoFocus
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Konva from 'konva';
 import {
   Arrow, Circle, Image as KonvaImage,
@@ -13,6 +20,8 @@ import FloatingActionBar from '../../components/FloatingActionBar';
 import { useAnnotation } from '../../hooks/useAnnotation';
 import { useAppStore, type Annotation } from '../../store/useAppStore';
 
+// ─ Shape ─────────────────────────────────────────────────────────────────
+
 function Shape({ a }: { a: Annotation }) {
   const common = { stroke: a.color, strokeWidth: a.weight, listening: false };
   if (a.tool === 'pen')    return <Line points={a.points ?? []} {...common} lineCap="round" lineJoin="round" />;
@@ -21,6 +30,8 @@ function Shape({ a }: { a: Annotation }) {
   if (a.tool === 'circle') return <Circle x={a.x} y={a.y} radius={a.radius} {...common} />;
   return <Text x={a.x} y={a.y} text={a.text ?? ''} fill={a.color} fontSize={18} fontStyle="bold" listening={false} />;
 }
+
+// ─ Crop ──────────────────────────────────────────────────────────────────
 
 function cropImage(src: string, rect: { x: number; y: number; w: number; h: number }): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -126,92 +137,148 @@ function AnnotationPhase({
     handleStageMouseUp,
   } = useAnnotation();
 
-  const [bgImage] = useImage(croppedImage);
-  const stageRef  = useRef<Konva.Stage>(null);
+  const [bgImage]   = useImage(croppedImage);
+  const stageRef    = useRef<Konva.Stage>(null);
+  // Guard: ignore the very first blur that fires right after autoFocus
+  const justOpened  = useRef(false);
 
   useEffect(() => { setTool('arrow'); }, [setTool]);
+
   useEffect(() => {
     (window as any).__glimpseStage = stageRef.current;
     return () => { delete (window as any).__glimpseStage; };
   }, [stageRef.current]);
 
-  return (
-    <div className="fixed inset-0" style={{ background: 'rgba(0,0,0,0.45)' }}>
-      <div className="absolute" style={{ left: rect.x, top: rect.y, width: rect.w, height: rect.h, position: 'absolute' }}>
+  // When textEditor opens, set the guard so immediate blur is ignored
+  useEffect(() => {
+    if (textEditor) {
+      justOpened.current = true;
+      // Clear guard after one tick
+      const t = setTimeout(() => { justOpened.current = false; }, 100);
+      return () => clearTimeout(t);
+    }
+  }, [textEditor?.id]);
 
-        {/* Konva stage */}
-        <Stage ref={stageRef} width={rect.w} height={rect.h}
+  // Viewport-level position for the textarea
+  const textareaStyle: React.CSSProperties | undefined = textEditor ? {
+    position: 'fixed',
+    left:  rect.x + textEditor.x,
+    top:   rect.y + textEditor.y,
+    minWidth: 160,
+    maxWidth: (rect.w - textEditor.x - 8),
+    minHeight: 28,
+    background: 'rgba(10,10,10,0.75)',
+    border: `2px solid ${textEditor.color}`,
+    borderRadius: 4,
+    color: textEditor.color,
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: 'Inter, sans-serif',
+    outline: 'none',
+    caretColor: textEditor.color,
+    zIndex: 9999,
+    padding: '3px 8px',
+    resize: 'none',
+    overflow: 'hidden',
+    lineHeight: '1.4',
+    boxShadow: `0 0 0 1px ${textEditor.color}33`,
+    whiteSpace: 'pre',
+  } : undefined;
+
+  return (
+    // Outer wrapper — full screen, holds everything
+    <div className="fixed inset-0" style={{ background: 'rgba(0,0,0,0.45)' }}>
+
+      {/* Konva stage container — pointer-events disabled while text editor is open */}
+      <div
+        className="absolute"
+        style={{
+          left: rect.x, top: rect.y,
+          width: rect.w, height: rect.h,
+          pointerEvents: textEditor ? 'none' : 'auto',
+        }}
+      >
+        <Stage
+          ref={stageRef}
+          width={rect.w}
+          height={rect.h}
           onMouseDown={handleStageMouseDown}
           onMouseMove={handleStageMouseMove}
           onMouseUp={handleStageMouseUp}
-          style={{ cursor: textEditor ? 'text' : 'crosshair', display: 'block' }}>
+          style={{ cursor: textEditor ? 'text' : 'crosshair', display: 'block' }}
+        >
           <Layer>
             {bgImage && <KonvaImage image={bgImage} width={rect.w} height={rect.h} />}
             {annotations.map((a) => <Shape key={a.id} a={a} />)}
             {currentAnnotation && <Shape a={currentAnnotation} />}
-            {/* Live preview of text being typed */}
-            {textEditor && textValue && (
+            {/* Live preview of text being typed on canvas */}
+            {textEditor && textValue.trim() && (
               <Text
-                x={textEditor.x} y={textEditor.y}
+                x={textEditor.x}
+                y={textEditor.y}
                 text={textValue}
                 fill={textEditor.color}
-                fontSize={18} fontStyle="bold"
+                fontSize={18}
+                fontStyle="bold"
                 listening={false}
               />
             )}
           </Layer>
         </Stage>
-
-        {/* Native HTML input — floats over stage at click position */}
-        {textEditor && (
-          <input
-            autoFocus
-            value={textValue}
-            onChange={(e) => setTextValue(e.target.value)}
-            onKeyDown={(e) => {
-              e.stopPropagation(); // prevent Esc from closing overlay
-              if (e.key === 'Enter') { e.preventDefault(); commitText(textValue, textEditor); }
-              if (e.key === 'Escape') { commitText('', textEditor); } // cancel with empty = discard
-            }}
-            onBlur={() => commitText(textValue, textEditor)}
-            placeholder="Type here..."
-            style={{
-              position: 'absolute',
-              left: textEditor.x,
-              top: textEditor.y,
-              minWidth: 140,
-              maxWidth: rect.w - textEditor.x - 8,
-              background: 'rgba(0,0,0,0.55)',
-              border: 'none',
-              borderBottom: `2px solid ${textEditor.color}`,
-              borderRadius: '2px 2px 0 0',
-              color: textEditor.color,
-              fontSize: 18,
-              fontWeight: 'bold',
-              fontFamily: 'inherit',
-              outline: 'none',
-              caretColor: textEditor.color,
-              zIndex: 20,
-              padding: '2px 6px',
-              letterSpacing: '0.01em',
-            }}
-          />
-        )}
       </div>
 
+      {/*
+        * TEXT INPUT — rendered at viewport level (fixed), OUTSIDE the Konva div.
+        * This is critical: anything inside the Konva container div gets its
+        * pointer events swallowed by the canvas element.
+        */}
+      {textEditor && textareaStyle && (
+        <textarea
+          autoFocus
+          rows={1}
+          value={textValue}
+          placeholder="Type and press Enter"
+          onChange={(e) => {
+            setTextValue(e.target.value);
+            // Auto-grow height
+            e.target.style.height = 'auto';
+            e.target.style.height = `${e.target.scrollHeight}px`;
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              commitText(textValue, textEditor);
+            }
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              commitText('', textEditor); // discard
+            }
+          }}
+          onBlur={() => {
+            if (justOpened.current) return; // ignore immediate blur
+            commitText(textValue, textEditor);
+          }}
+          style={textareaStyle}
+        />
+      )}
+
       {/* FAB */}
-      <div className="absolute" style={{
-        left: rect.x + rect.w / 2,
-        top: Math.min(rect.y + rect.h + 20, window.innerHeight - 72),
-        transform: 'translateX(-50%)',
-      }}>
+      <div
+        className="absolute"
+        style={{
+          left: rect.x + rect.w / 2,
+          top: Math.min(rect.y + rect.h + 20, window.innerHeight - 72),
+          transform: 'translateX(-50%)',
+        }}
+      >
         <FloatingActionBar />
       </div>
     </div>
   );
 }
 
-// ─ Root ─────────────────────────────────────────────────────────────────────────────
+// ─ Root ──────────────────────────────────────────────────────────────────
 
 export default function Overlay() {
   const sourceImage      = useAppStore((s) => s.sourceImage);
@@ -224,10 +291,9 @@ export default function Overlay() {
 
   useEffect(() => {
     if (!window.electron) { console.error('[Overlay] window.electron UNDEFINED'); return; }
-    const offCapture    = window.electron.onCaptureImage((img) => { console.log('[Overlay] image received'); setSourceImage(img); });
-    const offReset      = window.electron.onResetOverlay(() => { console.log('[Overlay] reset'); reset(); });
+    const offCapture    = window.electron.onCaptureImage((img) => { setSourceImage(img); });
+    const offReset      = window.electron.onResetOverlay(() => { reset(); });
     const offFullscreen = window.electron.onFullscreenMode(({ width, height }) => {
-      console.log('[Overlay] fullscreen', width, 'x', height);
       setSelectionRect({ x: 0, y: 0, w: width, h: height });
     });
     window.electron.rendererReady();
