@@ -1,7 +1,6 @@
 /**
- * FloatingActionBar.jsx
- * Annotation toolbar. Save/Copy flatten the Konva stage (annotations + image)
- * before exporting — so the saved image includes all drawn shapes.
+ * @file FloatingActionBar.jsx
+ * Annotation toolbar. Save/Copy flatten the Konva stage before exporting.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -94,34 +93,29 @@ function ContextPopover({ anchorRef }) {
   );
 }
 
-// Flatten Konva stage (background image + all annotations) into a single PNG dataUrl
 function getFlattenedImage() {
   const stage = window.__glimpseStage;
-  if (!stage) {
-    console.error('[FAB] __glimpseStage not available');
-    return null;
-  }
+  if (!stage) return null;
   try {
     return stage.toDataURL({ pixelRatio: 2, mimeType: 'image/png' });
-  } catch (e) {
-    console.error('[FAB] stage.toDataURL failed:', e);
+  } catch {
     return null;
   }
 }
 
 export default function FloatingActionBar() {
-  const activeTool     = useAppStore((s) => s.activeTool);
-  const activeColor    = useAppStore((s) => s.activeColor);
-  const showPopover    = useAppStore((s) => s.showColorPopover);
-  const setTool        = useAppStore((s) => s.setTool);
-  const togglePopover  = useAppStore((s) => s.toggleColorPopover);
-  const setShowPopover = useAppStore((s) => s.setShowColorPopover);
-  const undo           = useAppStore((s) => s.undo);
+  const activeTool       = useAppStore((s) => s.activeTool);
+  const activeColor      = useAppStore((s) => s.activeColor);
+  const showPopover      = useAppStore((s) => s.showColorPopover);
+  const setTool          = useAppStore((s) => s.setTool);
+  const togglePopover    = useAppStore((s) => s.toggleColorPopover);
+  const setShowPopover   = useAppStore((s) => s.setShowColorPopover);
+  const undo             = useAppStore((s) => s.undo);
   const clearAnnotations = useAppStore((s) => s.clearAnnotations);
 
   const toolRefs = useRef({});
-  const [copied, setCopied]   = useState(false);
-  const [saving, setSaving]   = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const handleToolClick = (toolId) => {
     if (activeTool === toolId) togglePopover();
@@ -136,33 +130,23 @@ export default function FloatingActionBar() {
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [showPopover, setShowPopover]);
 
-  // Save: flatten stage (image + annotations) then write to disk
   const handleSave = async () => {
     const dataUrl = getFlattenedImage();
     if (!dataUrl) return;
     setSaving(true);
     try {
-      const result = await window.electron.saveImage(dataUrl, `glimpse-${Date.now()}.png`);
-      if (!result.canceled) console.log('[FAB] Saved to:', result.filePath);
-    } catch (e) {
-      console.error('[FAB] Save error:', e);
+      await window.electron.saveImage(dataUrl, `glimpse-${Date.now()}.png`);
     } finally {
       setSaving(false);
     }
   };
 
-  // Copy: flatten stage then write to clipboard
   const handleCopy = async () => {
     const dataUrl = getFlattenedImage();
     if (!dataUrl) return;
-    try {
-      await window.electron.copyToClipboard(dataUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      console.log('[FAB] Copied to clipboard');
-    } catch (e) {
-      console.error('[FAB] Copy error:', e);
-    }
+    await window.electron.copyToClipboard(dataUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -175,7 +159,6 @@ export default function FloatingActionBar() {
         className="flex items-center gap-0.5 bg-[#1C1C1E] border border-[#2A2A2D] rounded-full px-3 py-2"
         style={{ boxShadow: '0 24px 64px rgba(0,0,0,0.65), 0 6px 20px rgba(0,0,0,0.4)' }}>
 
-        {/* Tools */}
         {TOOLS.map(({ id, Icon, label }) => {
           const isActive = activeTool === id;
           return (
@@ -197,7 +180,6 @@ export default function FloatingActionBar() {
 
         <Divider />
 
-        {/* History */}
         <button title="Undo" onClick={undo}
           className="w-8 h-8 flex items-center justify-center rounded-full text-[#9CA3AF] hover:text-[#F9FAFB] hover:bg-[#2A2A2D]/60 transition-all focus:outline-none">
           <Undo2 size={15} />
@@ -209,7 +191,6 @@ export default function FloatingActionBar() {
 
         <Divider />
 
-        {/* Actions */}
         <button title="Retake" onClick={() => window.electron.retakeCapture()}
           className="w-8 h-8 flex items-center justify-center rounded-full text-[#9CA3AF] hover:text-[#F9FAFB] hover:bg-[#2A2A2D]/60 transition-all focus:outline-none">
           <RefreshCcw size={15} />

@@ -10,6 +10,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { captureWithOverlay } from './capture.js';
 import { registerIpcHandlers } from './ipcHandlers.js';
+import Store from 'electron-store';
+import type { AppSettings } from './types.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -24,22 +26,20 @@ let overlayDismissTimer: ReturnType<typeof setTimeout> | null = null;
 
 export let overlayRendererReady = false;
 export function setOverlayRendererReady(v: boolean) {
-  console.log(`[Main] overlayRendererReady → ${v}`);
   overlayRendererReady = v;
 }
 
+const store = new Store<AppSettings>({ name: 'glimpse-settings' });
+
 function windowUrl(name: 'launcher' | 'overlay'): string {
-  const url = isDev
+  return isDev
     ? `${DEV_URL}/?window=${name}`
     : `file://${path.join(__dirname, '../dist/index.html')}?window=${name}`;
-  console.log(`[Main] windowUrl(${name}) = ${url}`);
-  return url;
 }
 
 const preloadPath = path.join(__dirname, 'preload.cjs');
 
 export function safeHideOverlay(): void {
-  console.log('[Main] safeHideOverlay called');
   if (overlayDismissTimer) { clearTimeout(overlayDismissTimer); overlayDismissTimer = null; }
   overlayRendererReady = false;
   if (overlayWindow && !overlayWindow.isDestroyed()) {
@@ -64,15 +64,11 @@ function createLauncherWindow(): BrowserWindow {
     webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
   void win.loadURL(windowUrl('launcher'));
-  win.webContents.on('did-finish-load', () => console.log('[Main] Launcher did-finish-load'));
-  win.webContents.on('did-fail-load',   (_e, c, d) => console.error(`[Main] Launcher FAILED: ${c} ${d}`));
-  win.webContents.on('console-message', (_e, _l, msg, line, src) => console.log(`[Launcher-Renderer] ${msg}  (${src}:${line})`));
   return win;
 }
 
 function createOverlayWindow(): BrowserWindow {
   const { width, height } = screen.getPrimaryDisplay().bounds;
-  console.log(`[Main] Creating overlay ${width}x${height}, preload: ${preloadPath}`);
   const win = new BrowserWindow({
     width, height, x: 0, y: 0,
     transparent: true, frame: false,
@@ -85,22 +81,17 @@ function createOverlayWindow(): BrowserWindow {
     webPreferences: { preload: preloadPath, contextIsolation: true, nodeIntegration: false, sandbox: false },
   });
   void win.loadURL(windowUrl('overlay'));
-  win.webContents.on('did-finish-load',     () => console.log('[Main] Overlay did-finish-load'));
-  win.webContents.on('did-fail-load',       (_e, c, d) => console.error(`[Main] Overlay FAILED: ${c} ${d}`));
-  win.webContents.on('console-message',     (_e, _l, msg, line, src) => console.log(`[Overlay-Renderer] ${msg}  (${src}:${line})`));
-  win.webContents.on('render-process-gone', (_e, details) => { console.error('[Main] Overlay crash:', details); safeHideOverlay(); });
+  win.webContents.on('render-process-gone', () => safeHideOverlay());
   return win;
 }
 
 export async function triggerCapture(captureType: string = 'region'): Promise<void> {
-  console.log('[Main] triggerCapture called, type:', captureType);
-  if (!overlayWindow || !launcherWindow) { console.error('[Main] windows not ready'); return; }
+  if (!overlayWindow || !launcherWindow) return;
   if (overlayDismissTimer) { clearTimeout(overlayDismissTimer); overlayDismissTimer = null; }
   try {
     await captureWithOverlay(overlayWindow, launcherWindow, captureType as 'region' | 'fullscreen');
     overlayDismissTimer = setTimeout(() => safeHideOverlay(), 30_000);
-  } catch (err) {
-    console.error('[Main] Capture error:', err);
+  } catch {
     safeHideOverlay();
   }
 }
@@ -121,8 +112,6 @@ function createTray(): Tray {
 }
 
 async function bootstrap(): Promise<void> {
-  console.log('[Main] bootstrap start, isDev =', isDev);
-  console.log('[Main] preload path:', preloadPath);
   launcherWindow = createLauncherWindow();
   overlayWindow  = createOverlayWindow();
   tray           = createTray();
@@ -133,8 +122,11 @@ async function bootstrap(): Promise<void> {
     safeHideOverlay,
     setOverlayRendererReady,
   });
-  const ok = globalShortcut.register('CommandOrControl+Shift+5', () => void triggerCapture('region'));
-  console.log('[Main] Shortcut registered:', ok);
+  // Register saved shortcut or fallback to default
+  const shortcut = store.get('shortcut') as string || 'CommandOrControl+Shift+5';
+  globalShortcut.register(shortcut, () =>
+    void triggerCapture(store.get('defaultCaptureType') as string || 'region')
+  );
 }
 
 app.whenReady().then(() => void bootstrap());

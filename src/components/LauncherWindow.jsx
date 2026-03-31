@@ -1,17 +1,29 @@
 /**
  * @file LauncherWindow.jsx
- * page state: 'home' | 'settings'
- * Settings button navigates in-place — no new window.
+ * Loads settings from electron-store on mount and seeds:
+ *   - default captureType
+ *   - Zustand store tool/color/weight via initFromSettings
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Settings, X, Camera, Video, Globe, Monitor } from 'lucide-react';
 import SettingsPage from './SettingsPage';
+import { useAppStore } from '../store/useAppStore';
 
 export default function LauncherWindow() {
   const [page,        setPage]        = useState('home');
   const [activeMode,  setActiveMode]  = useState('screenshot');
   const [captureType, setCaptureType] = useState('region');
+  const initFromSettings = useAppStore((s) => s.initFromSettings);
+
+  // Hydrate defaults from electron-store on first mount
+  useEffect(() => {
+    window.electron?.getSettings?.().then((s) => {
+      if (!s) return;
+      if (s.defaultCaptureType) setCaptureType(s.defaultCaptureType);
+      initFromSettings(s);
+    });
+  }, []);
 
   const handleCapture = () => window.electron?.startCapture?.(captureType);
 
@@ -33,9 +45,7 @@ export default function LauncherWindow() {
           <span className="text-[#F9FAFB] text-sm font-semibold tracking-tight">Glimpse</span>
         </div>
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' }}>
-          <button
-            title="Settings"
-            onClick={() => setPage('settings')}
+          <button title="Settings" onClick={() => setPage('settings')}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-[#9CA3AF] hover:text-[#F9FAFB] hover:bg-[#2A2A2D] transition-colors">
             <Settings size={15} />
           </button>
